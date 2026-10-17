@@ -17,8 +17,16 @@ const coversDir = path.join(dataDir, 'covers');
 fs.mkdirSync(coversDir, { recursive: true });
 
 const db = openDb(dataDir);
-// Dossier réservé aux fichiers envoyés depuis le téléphone (distinct de la musique du PC).
-const uploadsDir = path.resolve(dataDir, 'Envois du téléphone');
+// Dossier réservé aux fichiers importés (depuis le PC ou le téléphone), distinct de la musique du PC.
+const uploadsDir = path.resolve(dataDir, 'Importations');
+const oldUploadsDir = path.resolve(dataDir, 'Envois du téléphone');
+if (fs.existsSync(oldUploadsDir) && !fs.existsSync(uploadsDir)) {
+  try {
+    fs.renameSync(oldUploadsDir, uploadsDir); // l'analyse reconnaît les fichiers déplacés : likes et playlists conservés
+  } catch {
+    // Dossier occupé : on garde l'ancien emplacement pour cette fois.
+  }
+}
 fs.mkdirSync(uploadsDir, { recursive: true });
 const scanner = new Scanner(db, dataDir, () => [...getMusicDirs(db), uploadsDir], log);
 const publicDir = resolvePublicDir();

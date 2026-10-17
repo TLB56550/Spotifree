@@ -10,6 +10,8 @@ import { useUI } from '../store/ui';
 import { openAt, useMenus } from '../hooks/useMenus';
 import { PlaylistCover } from './Cover';
 
+import { UploadPicker } from './Uploads';
+
 export function LibraryRow({
   to,
   cover,
@@ -127,6 +129,7 @@ export function Sidebar() {
           )}
         </div>
         <footer className="lib-foot">
+          <UploadPicker variant="nav" />
           <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
             <Settings />
             <span>Paramètres</span>

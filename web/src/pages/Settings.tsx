@@ -101,7 +101,7 @@ export default function SettingsPage() {
         <section className="setting-block">
           <h2>Envoyer de la musique vers le PC</h2>
           <p className="muted">
-            Les fichiers audio choisis sur ce téléphone sont copiés dans un dossier réservé de ton PC (« Envois du téléphone »), séparé de ta musique habituelle, puis ajoutés à la bibliothèque.
+            Les fichiers audio choisis sur ce téléphone sont copiés dans un dossier réservé de ton PC (« Importations »), séparé de ta musique habituelle, puis ajoutés à la bibliothèque.
           </p>
           <div className="setting-actions">
             <UploadPicker variant="button" />
@@ -155,9 +155,19 @@ export default function SettingsPage() {
         <h2>Dossiers de musique</h2>
         <p className="muted">Ces dossiers sont analysés, sous-dossiers compris. Les nouveaux fichiers sont détectés automatiquement.</p>
         <FolderManager />
+      </section>
+
+      <section className="setting-block">
+        <h2>Importer de la musique</h2>
+        <p className="muted">
+          Choisis des fichiers audio (ou glisse-les sur la fenêtre) : ils sont copiés dans un dossier réservé de l’application, séparé de ta musique habituelle, puis ajoutés à la bibliothèque. Tes téléphones peuvent aussi y envoyer leurs fichiers.
+        </p>
+        <div className="setting-actions">
+          <UploadPicker variant="button" />
+        </div>
         {settings?.uploadsDir && (
           <p className="muted small">
-            Les fichiers envoyés depuis le téléphone arrivent dans <code>{settings.uploadsDir}</code>. Ce dossier est analysé en plus des dossiers ci-dessus ; il est séparé de ta musique habituelle.
+            Dossier des importations : <code>{settings.uploadsDir}</code>
           </p>
         )}
       </section>

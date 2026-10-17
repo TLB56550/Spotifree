@@ -445,7 +445,7 @@ try {
     }
   };
   const sample = fs.readFileSync(findAudio(libDir));
-  const uploadsDir = path.join(dataDir, 'Envois du téléphone');
+  const uploadsDir = path.join(dataDir, 'Importations');
   const upload = (name, data, { cookie = phone, mb = true } = {}) =>
     fetch(`${rbase}/api/upload?name=${encodeURIComponent(name)}`, {
       method: 'POST',
@@ -465,7 +465,7 @@ try {
   assert.deepEqual((await get('/api/settings')).json.musicDirs.filter((d) => d.includes('Envois')), [], 'pas dans les dossiers de musique');
   assert.equal((await get('/api/settings')).json.uploadsDir, uploadsDir);
   assert.equal((await rcall('GET', '/api/settings', { cookie: phone })).json.uploadsDir, '');
-  ok('Envoi depuis le téléphone : fichier rangé dans « Envois du téléphone », titre analysé, lisible, hors dossiers de musique');
+  ok('Envoi depuis le téléphone : fichier rangé dans « Importations », titre analysé, lisible, hors dossiers de musique');
 
   r = await upload('Mon envoi.mp3', sample);
   assert.equal(r.status, 200);

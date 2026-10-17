@@ -1,11 +1,11 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Loader2, Upload } from 'lucide-react';
 import { useUploads, type UploadItem } from '../store/uploads';
 
 const ACCEPT = 'audio/*,.mp3,.flac,.m4a,.aac,.ogg,.oga,.opus,.wav';
 
 /** Bouton « Envoyer vers le PC » : ouvre le sélecteur de fichiers du téléphone. */
-export function UploadPicker({ variant }: { variant: 'row' | 'button' }) {
+export function UploadPicker({ variant }: { variant: 'row' | 'button' | 'nav' }) {
   const input = useRef<HTMLInputElement>(null);
   const add = useUploads((s) => s.add);
   const open = () => input.current?.click();
@@ -22,7 +22,12 @@ export function UploadPicker({ variant }: { variant: 'row' | 'button' }) {
           e.target.value = '';
         }}
       />
-      {variant === 'row' ? (
+      {variant === 'nav' ? (
+        <button type="button" className="nav-item nav-button" onClick={open}>
+          <Upload />
+          <span>Importer des fichiers</span>
+        </button>
+      ) : variant === 'row' ? (
         <button type="button" className="lib-row lib-new" onClick={open}>
           <span className="lib-cover lib-plus">
             <Upload aria-hidden />
@@ -52,7 +57,7 @@ function status(it: UploadItem): string {
     case 'sending':
       return `${it.size ? Math.round((it.loaded / it.size) * 100) : 0} %`;
     case 'done':
-      return 'Envoyé';
+      return 'Ajouté';
     case 'duplicate':
       return 'Déjà sur le PC';
     default:
@@ -94,6 +99,63 @@ export function UploadList() {
         </button>
       )}
     </div>
+  );
+}
+
+/** Sur le PC : liste flottante des importations, avec glisser-déposer de fichiers sur la fenêtre. */
+export function UploadFloat() {
+  const items = useUploads((s) => s.items);
+  const add = useUploads((s) => s.add);
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      setOver(true);
+    };
+    const overFn = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) setOver(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setOver(false);
+      add(Array.from(e.dataTransfer?.files ?? []));
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragover', overFn);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragover', overFn);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', drop);
+    };
+  }, [add]);
+  return (
+    <>
+      {over && (
+        <div className="drop-hint" aria-hidden>
+          <Upload />
+          <span>Dépose tes fichiers audio pour les importer</span>
+        </div>
+      )}
+      {items.length > 0 && (
+        <div className="upload-float" role="status">
+          <UploadList />
+        </div>
+      )}
+    </>
   );
 }
 

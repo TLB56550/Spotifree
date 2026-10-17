@@ -87,13 +87,20 @@ async function work(): Promise<void> {
   } finally {
     working = false;
   }
-  if (sent) toast(sent === 1 ? 'Titre envoyé vers ton PC.' : `${sent} titres envoyés vers ton PC.`);
+  if (sent) toast(sent === 1 ? 'Titre ajouté à la bibliothèque.' : `${sent} titres ajoutés à la bibliothèque.`);
   if (failed) toast(failed === 1 ? 'Un fichier n’a pas pu être envoyé.' : `${failed} fichiers n’ont pas pu être envoyés.`, 'error');
 }
 
+const AUDIO = /\.(mp3|flac|m4a|aac|ogg|oga|opus|wav)$/i;
+
 export const useUploads = create<UploadState>((set) => ({
   items: [],
-  add: (list) => {
+  add: (all) => {
+    const list = all.filter((f) => AUDIO.test(f.name));
+    if (list.length < all.length) {
+      const n = all.length - list.length;
+      toast(n === 1 ? 'Un fichier ignoré : ce n’est pas de la musique.' : `${n} fichiers ignorés : ce n’est pas de la musique.`, 'error');
+    }
     if (!list.length) return;
     const added: UploadItem[] = list.map((f) => {
       const id = nextId++;
