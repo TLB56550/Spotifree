@@ -87,6 +87,7 @@ public class MainActivity extends Activity {
         } else {
             openServer();
         }
+        Updater.checkOnStart(this);
     }
 
     private SharedPreferences prefs() {
@@ -249,6 +250,7 @@ public class MainActivity extends Activity {
                         + "Le téléphone et le PC doivent tous les deux avoir Tailscale activé. "
                         + "À la première connexion, saisis le code d'association affiché sur le PC.",
                 14, MUTED, false, Gravity.START), stack(28));
+        col.addView(text("Version " + Updater.installedName(this), 12, MUTED, false, Gravity.CENTER_HORIZONTAL), stack(24));
 
         scroll.addView(col, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setOverlay(scroll, true);

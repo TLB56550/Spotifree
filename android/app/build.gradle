@@ -10,7 +10,7 @@ android {
         applicationId 'fr.spotifree.app'
         minSdk 26
         targetSdk 34
-        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionCode Integer.parseInt(System.getenv('VERSION_CODE') ?: System.getenv('GITHUB_RUN_NUMBER') ?: '1')
         versionName System.getenv('APP_VERSION') ?: '1.0.0'
     }
 

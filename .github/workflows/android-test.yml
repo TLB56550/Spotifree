@@ -27,8 +27,10 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compiler l'APK
+      - name: Compiler l'APK (numéro de version 1 : la mise à jour doit être proposée)
         working-directory: android
+        env:
+          VERSION_CODE: '1'
         run: gradle --no-daemon assembleRelease
 
       - name: Activer KVM
@@ -73,6 +75,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la out || true
-          gh release create "emu-${{ github.run_number }}" out/*.png out/logcat.txt out/ui-1.xml \
+          gh release create "emu-${{ github.run_number }}" out/*.png out/logcat.txt out/ui-1.xml out/ui-maj.xml \
             --prerelease --latest=false \
             --title "Test émulateur ${{ github.run_number }}" --notes "Captures d'écran et journal du test."

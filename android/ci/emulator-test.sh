@@ -17,7 +17,7 @@ import re, sys
 kind, value = sys.argv[1], sys.argv[2]
 xml = open('out/ui-last.xml', encoding='utf8').read()
 for node in re.findall(r'<node [^>]*>', xml):
-    if (kind == 'class' and f'class="{value}"' in node) or (kind == 'text' and f'text="{value}"' in node):
+    if (kind == 'class' and f'class="{value}"' in node) or (kind == 'text' and f'text="{value.lower()}"' in node.lower()):
         m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
         x1, y1, x2, y2 = map(int, m.groups())
         print((x1 + x2) // 2, (y1 + y2) // 2)
@@ -31,9 +31,25 @@ adb install -r "$APK" || exit 1
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
 adb logcat -c
 
+# 0) mise à jour : cet APK porte le numéro 1, la dernière version publiée est plus récente
+adb shell am start -n $PKG/.MainActivity
+sleep 8
+shot 0-maj-dialogue
+tap text "Mettre à jour"
+sleep 20
+shot 0b-maj-installation
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/ui-maj.xml" >/dev/null 2>&1
+adb shell input keyevent 4
+sleep 2
+adb shell am force-stop $PKG
+adb shell pm clear $PKG
+adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
+
 # 1) premier lancement : l'écran de saisie doit apparaître
 adb shell am start -n $PKG/.MainActivity
-sleep 6
+sleep 8
+tap text "Plus tard"
+sleep 1
 shot 1-lancement
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/ui-1.xml" >/dev/null 2>&1
 
@@ -54,7 +70,9 @@ try_address() {
   adb shell pm clear $PKG
   adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
   adb shell am start -n $PKG/.MainActivity
-  sleep 5
+  sleep 8
+  tap text "Plus tard"
+  sleep 1
   tap class android.widget.EditText
   sleep 1
   adb shell input text "$1"
