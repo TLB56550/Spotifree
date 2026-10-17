@@ -208,9 +208,23 @@ Deplacer ou renommer un fichier ne fait pas perdre ses likes ni ses playlists.
 
 SUR TON TELEPHONE ANDROID
 -------------------------
-Ce n'est pas un fichier a installer depuis le Play Store : c'est une
-application web qui s'installe depuis Chrome (elle apparait ensuite sur
-l'ecran d'accueil, en plein ecran, avec sa propre icone).
+Deux possibilites, au choix. Dans les deux cas, la musique est lue depuis
+ton PC et rien n'est copie sur le telephone.
+
+A) Application Spotifree (fichier .apk, recommandee)
+   Sur le telephone, ouvre ce lien dans Chrome, puis installe le fichier :
+   https://github.com/TLB56550/Spotifree/releases/latest/download/Spotifree.apk
+   (Android demande d'autoriser l'installation depuis Chrome la 1re fois.)
+   Au premier lancement, saisis l'adresse de ton PC : celle qui commence par
+   100. dans "Parametres" > "Telephone" (pastille Tailscale), puis le code
+   d'association. La musique continue ecran eteint, avec les commandes sur
+   l'ecran verrouille. Il faut Tailscale actif sur le PC et le telephone
+   (voir plus bas). Si tu changes d'adresse : "Parametres" > "Changer
+   l'adresse du PC" dans l'application.
+
+B) Application web dans Chrome (sans installer de fichier)
+   Elle s'installe depuis Chrome (elle apparait ensuite sur l'ecran d'accueil,
+   en plein ecran, avec sa propre icone). Etapes ci-dessous.
 
 Sur le PC :
 1. Lance Ma Bibliotheque, ouvre "Parametres" > "Telephone".
