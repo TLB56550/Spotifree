@@ -9,6 +9,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -18,6 +20,7 @@ import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -26,6 +29,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -56,6 +60,9 @@ public class MainActivity extends Activity {
     private WebView web;
     private View overlay;
     private boolean overlayIsSetup;
+    private boolean overlayIsLoading;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable timeout = () -> showError("Le PC ne répond pas (délai dépassé).");
     private String serverUrl;
 
     @Override
@@ -159,6 +166,7 @@ public class MainActivity extends Activity {
         removeOverlay();
         overlay = view;
         overlayIsSetup = setup;
+        overlayIsLoading = false;
         root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
@@ -178,6 +186,7 @@ public class MainActivity extends Activity {
     }
 
     private void showSetup(String error) {
+        handler.removeCallbacks(timeout);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
@@ -241,14 +250,38 @@ public class MainActivity extends Activity {
         setOverlay(scroll, true);
     }
 
-    private void showError() {
+    private void showLoading() {
+        handler.removeCallbacks(timeout);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER);
+        col.setBackgroundColor(BG);
+        col.setPadding(dp(24), dp(24), dp(24), dp(24));
+        ProgressBar bar = new ProgressBar(this);
+        bar.setIndeterminate(true);
+        col.addView(bar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        col.addView(text("Connexion à ton PC…", 16, MUTED, false, Gravity.CENTER_HORIZONTAL), stack(16));
+        col.addView(button("Changer l'adresse", false, v -> {
+            handler.removeCallbacks(timeout);
+            showSetup(null);
+        }), stack(32));
+        setOverlay(col, false);
+        overlayIsLoading = true;
+        handler.postDelayed(timeout, 20000);
+    }
+
+    private void showError(String detail) {
+        handler.removeCallbacks(timeout);
+        if (web != null) web.stopLoading();
         LinearLayout col = column();
         col.setBackgroundColor(BG);
         col.setGravity(Gravity.CENTER);
         col.addView(text("Impossible de joindre ton PC", 22, FG, true, Gravity.CENTER_HORIZONTAL));
+        col.addView(text(detail, 15, ERROR, false, Gravity.START), stack(12));
         col.addView(text(
                 "Vérifie que :\n"
-                        + "• Ma Bibliothèque est lancée sur ton PC et il est allumé ;\n"
+                        + "• le PC est allumé et Ma Bibliothèque est lancée (version 0.3.0 ou plus) ;\n"
+                        + "• « Autoriser l'accès depuis mon téléphone » est activé dans Paramètres > Téléphone ;\n"
                         + "• Tailscale est activé sur ton téléphone et sur ton PC ;\n"
                         + "• l'adresse est correcte :\n" + serverUrl,
                 15, MUTED, false, Gravity.START), stack(16));
@@ -260,8 +293,8 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- WebView
 
     private void openServer() {
-        removeOverlay();
         if (web == null) createWebView();
+        showLoading();
         web.loadUrl(serverUrl + "/");
     }
 
@@ -294,12 +327,23 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) showError();
+                if (request.isForMainFrame()) showError("Connexion impossible : " + error.getDescription());
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) {
+                    showError("Le PC a répondu par une erreur (code " + response.getStatusCode() + ").");
+                }
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 CookieManager.getInstance().flush();
+                if (overlayIsLoading) {
+                    handler.removeCallbacks(timeout);
+                    removeOverlay();
+                }
             }
         });
         root.addView(web, 0, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -364,6 +408,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        handler.removeCallbacks(timeout);
         WeakReference<MainActivity> ref = current;
         if (ref != null && ref.get() == this) current = null;
         if (isFinishing()) PlaybackService.halt();
