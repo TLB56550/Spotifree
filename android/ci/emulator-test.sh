@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Lance l'APK dans un émulateur, saisit une adresse, et garde des captures d'écran + le journal.
+set -x
+APK=android/app/build/outputs/apk/release/app-release.apk
+OUT=out
+mkdir -p "$OUT"
+PKG=fr.spotifree.app
+
+shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
+
+# Trouve un élément de l'écran (par classe ou par texte) et touche son centre.
+tap() {
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  adb pull /sdcard/ui.xml "$OUT/ui-last.xml" >/dev/null 2>&1
+  python3 - "$1" "$2" <<'PY' > "$OUT/tap.txt"
+import re, sys
+kind, value = sys.argv[1], sys.argv[2]
+xml = open('out/ui-last.xml', encoding='utf8').read()
+for node in re.findall(r'<node [^>]*>', xml):
+    if (kind == 'class' and f'class="{value}"' in node) or (kind == 'text' and f'text="{value}"' in node):
+        m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+        x1, y1, x2, y2 = map(int, m.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+  read -r X Y < "$OUT/tap.txt"
+  if [ -n "$X" ]; then adb shell input tap "$X" "$Y"; else echo "ELEMENT INTROUVABLE: $1 $2"; fi
+}
+
+adb install -r "$APK" || exit 1
+adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
+adb logcat -c
+
+# 1) premier lancement : l'écran de saisie doit apparaître
+adb shell am start -n $PKG/.MainActivity
+sleep 6
+shot 1-lancement
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/ui-1.xml" >/dev/null 2>&1
+
+# 2) saisie d'une adresse qui répond (page de test sur l'hôte)
+tap class android.widget.EditText
+sleep 1
+adb shell input text "10.0.2.2:4243"
+sleep 1
+shot 2-saisie
+adb shell input keyevent 4   # ferme le clavier
+sleep 1
+tap text "Se connecter"
+sleep 8
+shot 3-connexion
+
+# 3) adresse injoignable : un message d'erreur doit apparaître (pas un écran noir)
+adb shell pm clear $PKG
+adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
+adb shell am start -n $PKG/.MainActivity
+sleep 5
+tap class android.widget.EditText
+sleep 1
+adb shell input text "10.0.2.2:9"
+sleep 1
+adb shell input keyevent 4
+sleep 1
+tap text "Se connecter"
+sleep 10
+shot 4-injoignable
+
+adb logcat -d > "$OUT/logcat-complet.txt"
+grep -iE "AndroidRuntime|spotifree|FATAL|chromium.*(ERR|error)" "$OUT/logcat-complet.txt" | head -200 > "$OUT/logcat.txt"
