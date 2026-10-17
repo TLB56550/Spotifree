@@ -20,6 +20,7 @@
   --glass: rgba(18, 21, 26, 0.86);
   --page-shade: rgba(0, 0, 0, 0.2);
   --hero-mix: 100%;
+  --glow-mix: 26%;
   --topbar: 64px;
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', sans-serif;
   --font-display: 'Bricolage Grotesque Variable', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
@@ -2859,4 +2860,48 @@ kbd {
 }
 .is-mobile .palette-grid {
   grid-template-columns: repeat(2, 1fr);
+}
+
+/* ------------------------------------------------------------------ rappels de la palette */
+.main,
+.m-main {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) var(--glow-mix), var(--panel)) 0, var(--panel) 440px) var(--panel);
+}
+.player,
+.sidebar .panel {
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+}
+.quick {
+  background: color-mix(in srgb, var(--accent) 12%, var(--raised));
+}
+.quick:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--raised));
+}
+.tl-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.mini {
+  background: color-mix(in srgb, var(--accent) 20%, var(--raised-2));
+}
+.tab svg {
+  box-sizing: content-box;
+  padding: 4px 14px;
+  border-radius: 999px;
+  transition: background 0.15s;
+}
+.tab.is-active svg {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.m-dock {
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 5%, var(--panel)) 14px);
+}
+.page-head h1,
+.home-greeting {
+  text-shadow: none;
+}
+.mini-progress div {
+  background: var(--accent);
+}
+.card:hover {
+  background: color-mix(in srgb, var(--accent) 9%, var(--raised));
 }

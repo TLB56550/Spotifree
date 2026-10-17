@@ -21,10 +21,7 @@ interface Palette {
 }
 
 export const PALETTES: Palette[] = [
-  {
-    id: 'ambre', name: 'Ambre', hue: 38, satDark: 14, satLight: 32, accentDark: '#f2b134', accentLight: '#b36b00',
-    darkSurfaces: { bg: '#07080a', panel: '#12151a', raised: '#1b1f26', raised2: '#252a33', text: '#f2efe9', muted: '#a0a7b3', faint: '#6d7582' },
-  },
+  { id: 'ambre', name: 'Ambre', hue: 34, satDark: 16, satLight: 32, accentDark: '#f2b134', accentLight: '#b36b00' },
   { id: 'emeraude', name: 'Émeraude', hue: 152, satDark: 18, satLight: 24, accentDark: '#2fd47a', accentLight: '#0c7f48' },
   { id: 'corail', name: 'Corail', hue: 12, satDark: 16, satLight: 30, accentDark: '#ff7a66', accentLight: '#c8361f' },
   { id: 'ocean', name: 'Océan', hue: 222, satDark: 26, satLight: 30, accentDark: '#5c9bff', accentLight: '#1f58d6' },
@@ -74,14 +71,16 @@ function rgb(hex: string): string {
 export function buildVars(paletteId: string, resolved: 'dark' | 'light'): Record<string, string> {
   const p = PALETTES.find((x) => x.id === paletteId) ?? PALETTES[0]!;
   if (resolved === 'dark') {
+    // Surfaces plus claires et teintées que du quasi-noir : la palette se voit partout.
+    const sat = p.id === 'graphite' ? p.satDark : p.satDark + 8;
     const s = p.darkSurfaces ?? {
-      bg: hslToHex(p.hue, p.satDark, 4.5),
-      panel: hslToHex(p.hue, p.satDark, 8.5),
-      raised: hslToHex(p.hue, p.satDark - 1, 12.5),
-      raised2: hslToHex(p.hue, p.satDark - 2, 17),
-      text: hslToHex(p.hue, Math.min(p.satDark, 14) + 4, 94),
-      muted: hslToHex(p.hue, 8, 68),
-      faint: hslToHex(p.hue, 6, 50),
+      bg: hslToHex(p.hue, sat, 9),
+      panel: hslToHex(p.hue, sat, 13),
+      raised: hslToHex(p.hue, sat - 1, 18),
+      raised2: hslToHex(p.hue, sat - 2, 24),
+      text: hslToHex(p.hue, Math.min(sat, 16) + 4, 95),
+      muted: hslToHex(p.hue, 10, 73),
+      faint: hslToHex(p.hue, 8, 56),
     };
     return {
       '--bg': s.bg, '--panel': s.panel, '--raised': s.raised, '--raised-2': s.raised2,
@@ -94,6 +93,7 @@ export function buildVars(paletteId: string, resolved: 'dark' | 'light'): Record
       '--glass': `rgba(${rgb(s.panel)}, 0.86)`,
       '--page-shade': 'rgba(0, 0, 0, 0.2)',
       '--hero-mix': '100%',
+      '--glow-mix': '26%',
     };
   }
   const bg = hslToHex(p.hue, p.satLight, 96.5);
@@ -109,6 +109,7 @@ export function buildVars(paletteId: string, resolved: 'dark' | 'light'): Record
     '--glass': `rgba(${rgb(panel)}, 0.88)`,
     '--page-shade': 'rgba(0, 0, 0, 0)',
     '--hero-mix': '30%',
+    '--glow-mix': '17%',
   };
 }
 
