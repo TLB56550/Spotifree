@@ -14,6 +14,8 @@ import { LibraryChips } from '../components/LibraryChips';
 import { LibraryRow, PlaylistRow } from '../components/Sidebar';
 import { useUI } from '../store/ui';
 import { Grid, MediaCard } from '../components/Cards';
+import { UploadList, UploadPicker } from '../components/Uploads';
+import { useSettings } from '../components/Folders';
 import { TrackList, type SortKey } from '../components/TrackList';
 
 /** Playlists et titres likés : l'onglet « Bibliothèque » du téléphone. */
@@ -21,6 +23,7 @@ export function LibraryPage() {
   const navigate = useNavigate();
   const openDialog = useUI((s) => s.openPlaylistDialog);
   const { data: playlists } = useQuery({ queryKey: ['playlists'], queryFn: () => api.get<Playlist[]>('/api/playlists') });
+  const { data: settings } = useSettings();
   const { data: likedIds } = useQuery({ queryKey: ['favorites', 'ids'], queryFn: () => api.get<number[]>('/api/favorites/ids') });
   return (
     <div className="page-pad">
@@ -48,7 +51,9 @@ export function LibraryPage() {
           subtitle={`Playlist · ${countTracks(likedIds?.length ?? 0)}`}
         />
         {playlists?.map((p) => <PlaylistRow key={p.id} playlist={p} />)}
+        {settings && !settings.local && <UploadPicker variant="row" />}
       </div>
+      {settings && !settings.local && <UploadList />}
     </div>
   );
 }

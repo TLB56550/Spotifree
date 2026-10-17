@@ -18,6 +18,7 @@ import { ContextMenuHost } from './components/ContextMenu';
 import { ModalHost, ToastHost } from './components/Modals';
 import { PageMessage } from './components/Hero';
 import { ConnectionBanner } from './components/ConnectionBanner';
+import { UploadBanner } from './components/Uploads';
 import { MiniPlayer, NowPlaying, TabBar } from './components/Mobile';
 import HomePage from './pages/Home';
 import SearchPage from './pages/Search';
@@ -111,6 +112,7 @@ export default function App() {
           </main>
           <div className="m-dock">
             <ConnectionBanner />
+            <UploadBanner />
             <MiniPlayer />
             <TabBar />
           </div>

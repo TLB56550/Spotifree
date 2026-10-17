@@ -21,6 +21,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceResponse;
@@ -64,6 +65,9 @@ public class MainActivity extends Activity {
     private View overlay;
     private boolean overlayIsSetup;
     private boolean overlayIsLoading;
+    private static final int REQ_PICK_AUDIO = 4243;
+    /** Réponse attendue par la page quand elle a demandé de choisir des fichiers (envoi vers le PC). */
+    private ValueCallback<Uri[]> filePicker;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable timeout = () -> showError("Le PC ne répond pas (délai dépassé).");
     private String serverUrl;
@@ -316,12 +320,31 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);
-        s.setAllowContentAccess(false);
+        s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setUserAgentString(s.getUserAgentString() + " SpotifreeApp/1");
         CookieManager.getInstance().setAcceptCookie(true);
         web.addJavascriptInterface(new Bridge(), "SpotifreeAndroid");
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                // Une demande précédente restée sans réponse est annulée.
+                if (filePicker != null) filePicker.onReceiveValue(null);
+                filePicker = callback;
+                Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+                pick.addCategory(Intent.CATEGORY_OPENABLE);
+                pick.setType("audio/*");
+                pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+                try {
+                    startActivityForResult(Intent.createChooser(pick, "Choisir de la musique"), REQ_PICK_AUDIO);
+                } catch (Exception e) {
+                    filePicker = null;
+                    callback.onReceiveValue(null);
+                    return false;
+                }
+                return true;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -415,6 +438,25 @@ public class MainActivity extends Activity {
     }
 
     // ---------------------------------------------------------------- cycle de vie
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_PICK_AUDIO || filePicker == null) return;
+        Uri[] result = null;
+        if (resultCode == RESULT_OK && data != null) {
+            if (data.getClipData() != null) {
+                int n = data.getClipData().getItemCount();
+                result = new Uri[n];
+                for (int i = 0; i < n; i++) result[i] = data.getClipData().getItemAt(i).getUri();
+            } else if (data.getData() != null) {
+                result = new Uri[] { data.getData() };
+            }
+        }
+        filePicker.onReceiveValue(result);
+        filePicker = null;
+    }
 
     @Override
     @SuppressWarnings("deprecation")

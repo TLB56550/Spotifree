@@ -111,6 +111,8 @@ export interface Settings {
   defaultMusicDir: string;
   platform: string;
   dataDir: string;
+  /** Dossier du PC où arrivent les fichiers envoyés depuis le téléphone (vide hors du PC). */
+  uploadsDir: string;
   version: string;
   canBrowse: boolean;
   /** Vrai quand la requête vient du PC lui-même (et non d'un téléphone associé). */

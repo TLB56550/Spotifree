@@ -138,6 +138,9 @@ export class RemoteAccess {
   private async start(): Promise<void> {
     if (this.server) return;
     const server = http.createServer((req, res) => this.app.routing(req, res));
+    // Les envois de fichiers depuis le téléphone peuvent durer longtemps (réseau mobile).
+    server.requestTimeout = 0;
+    server.headersTimeout = 60_000;
     this.server = server;
     this.error = null;
     await new Promise<void>((resolve) => {

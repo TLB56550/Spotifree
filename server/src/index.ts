@@ -16,12 +16,15 @@ const coversDir = path.join(dataDir, 'covers');
 fs.mkdirSync(coversDir, { recursive: true });
 
 const db = openDb(dataDir);
-const scanner = new Scanner(db, dataDir, () => getMusicDirs(db), log);
+// Dossier réservé aux fichiers envoyés depuis le téléphone (distinct de la musique du PC).
+const uploadsDir = path.resolve(dataDir, 'Envois du téléphone');
+fs.mkdirSync(uploadsDir, { recursive: true });
+const scanner = new Scanner(db, dataDir, () => [...getMusicDirs(db), uploadsDir], log);
 const publicDir = resolvePublicDir();
 
 const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
 const remote = new RemoteAccess(db, app, REMOTE_PORT, log);
-registerRoutes(app, { db, scanner, dataDir, coversDir, publicDir, host: HOST, port: PORT, remote });
+registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, publicDir, host: HOST, port: PORT, remote });
 
 const url = `http://127.0.0.1:${PORT}`;
 
@@ -75,12 +78,9 @@ if (!publicDir) log("Attention : l'interface (dossier « public ») est introuva
 if (process.env.OPEN_BROWSER === '1') openApp();
 await remote.init();
 
-if (getMusicDirs(db).length) {
-  scanner.watch();
-  scanner.start();
-} else {
-  log("Aucun dossier de musique n'est configuré : choisis-le depuis l'application.");
-}
+if (!getMusicDirs(db).length) log("Aucun dossier de musique n'est configuré : choisis-le depuis l'application.");
+scanner.watch();
+scanner.start();
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {

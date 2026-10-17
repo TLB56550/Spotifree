@@ -10,13 +10,17 @@ import * as q from './queries';
 import { PAIR_PAGE } from './pairPage';
 import { isLocalRequest, type RemoteAccess } from './remote';
 import type { Scanner } from './scanner';
-import { HttpError, errMsg, mustInt, toInt } from './util';
+import { HttpError, errMsg, mustInt, pathKey, toInt } from './util';
+import { AUDIO_EXT } from './scanner';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 export interface Ctx {
   db: DB;
   scanner: Scanner;
   dataDir: string;
   coversDir: string;
+  uploadsDir: string;
   publicDir: string | null;
   host: string;
   port: number;
@@ -71,6 +75,36 @@ function intList(v: unknown, what: string): number[] {
   const out = v.map(toInt);
   if (out.some((n) => n === null)) throw new HttpError(400, `${what} invalide`);
   return out as number[];
+}
+
+const MAX_UPLOAD = 1024 * 1024 * 1024; // 1 Go par fichier
+const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/** Nom de fichier sûr (sans chemin, sans caractères interdits sous Windows) ; null si l'extension n'est pas de l'audio. */
+function safeUploadName(raw: string): { base: string; ext: string } | null {
+  const leaf = raw.split(/[\\/]/).pop() ?? '';
+  const ext = path.extname(leaf).toLowerCase();
+  if (!AUDIO_EXT.has(ext)) return null;
+  let base = leaf
+    .slice(0, leaf.length - ext.length)
+    .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+    .slice(0, 120)
+    .trim();
+  if (!base) base = 'audio';
+  if (RESERVED_NAMES.test(base)) base = `_${base}`;
+  return { base, ext };
+}
+
+/** Taille d'un fichier ou null s'il n'existe pas. */
+async function sizeOf(file: string): Promise<number | null> {
+  try {
+    return (await fsp.stat(file)).size;
+  } catch {
+    return null;
+  }
 }
 
 function pickFolder(): Promise<string | null> {
@@ -172,11 +206,83 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     defaultMusicDir: req.mbLocal ? defaultMusicDir() : '',
     platform: process.platform,
     dataDir: req.mbLocal ? ctx.dataDir : '',
+    uploadsDir: req.mbLocal ? ctx.uploadsDir : '',
     version: VERSION,
     canBrowse: isWin && req.mbLocal,
     local: req.mbLocal,
     deviceName: req.mbDevice?.name ?? null,
   }));
+
+  // ---- Envoi d'un fichier audio depuis le téléphone vers le dossier réservé du PC
+  app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
+
+  app.post('/api/upload', async (req, reply) => {
+    const query = (req.query ?? {}) as { name?: unknown };
+    const parsed = safeUploadName(typeof query.name === 'string' ? query.name : '');
+    if (!parsed) throw new HttpError(415, 'Format non pris en charge (MP3, FLAC, M4A, AAC, OGG, OPUS ou WAV).');
+    const stream = req.body as NodeJS.ReadableStream | undefined;
+    if (!stream || typeof (stream as { pipe?: unknown }).pipe !== 'function') throw new HttpError(400, 'Fichier manquant.');
+    const declared = Number(req.headers['content-length'] ?? 0);
+    if (declared > MAX_UPLOAD) throw new HttpError(413, 'Fichier trop volumineux (1 Go au maximum).');
+
+    await fsp.mkdir(ctx.uploadsDir, { recursive: true });
+    const trackAt = (file: string) =>
+      db.prepare('SELECT id FROM tracks WHERE path = ?').get(file) as { id: number } | undefined;
+
+    // Déjà envoyé (même nom, même taille) : on ne le copie pas une seconde fois.
+    const sameFile = path.join(ctx.uploadsDir, parsed.base + parsed.ext);
+    if (declared > 0 && (await sizeOf(sameFile)) === declared) {
+      const known = trackAt(sameFile);
+      const track = known ? q.tracksByIds(db, [known.id])[0] : undefined;
+      if (track) {
+        (stream as NodeJS.ReadableStream & { resume(): void }).resume();
+        return { track, duplicate: true };
+      }
+    }
+
+    let target = sameFile;
+    for (let n = 2; (await sizeOf(target)) !== null; n++) {
+      target = path.join(ctx.uploadsDir, `${parsed.base} (${n})${parsed.ext}`);
+      if (n > 999) throw new HttpError(500, 'Trop de fichiers portent déjà ce nom.');
+    }
+
+    const part = `${target}.part`;
+    let received = 0;
+    const limiter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        received += chunk.length;
+        if (received > MAX_UPLOAD) cb(new HttpError(413, 'Fichier trop volumineux (1 Go au maximum).'));
+        else cb(null, chunk);
+      },
+    });
+    try {
+      await pipeline(stream, limiter, fs.createWriteStream(part, { flags: 'wx' }));
+      if (received === 0) throw new HttpError(400, 'Le fichier est vide.');
+      if (declared > 0 && received !== declared) throw new HttpError(400, 'Envoi incomplet.');
+      await fsp.rename(part, target);
+    } catch (e) {
+      await fsp.rm(part, { force: true }).catch(() => {});
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(500, "L'envoi a échoué : " + errMsg(e));
+    }
+
+    scanner.start();
+    await scanner.whenIdle();
+    let row = trackAt(target);
+    if (!row) {
+      // Windows ne distingue pas les majuscules : on retrouve le titre sans tenir compte de la casse.
+      const all = db.prepare('SELECT id, path FROM tracks WHERE path LIKE ?').all(`%${path.basename(target)}`) as unknown as { id: number; path: string }[];
+      row = all.find((r) => pathKey(r.path) === pathKey(target));
+    }
+    const track = row ? q.tracksByIds(db, [row.id])[0] : undefined;
+    if (!track) {
+      await fsp.rm(target, { force: true }).catch(() => {});
+      scanner.start();
+      throw new HttpError(415, "Ce fichier n'a pas pu être lu : il est peut-être corrompu.");
+    }
+    reply.code(201);
+    return { track, duplicate: false };
+  });
 
   app.put('/api/settings', async (req) => {
     requireLocal(req);

@@ -434,6 +434,64 @@ try {
   assert.equal((await rcall('PUT', '/api/favorites/1', { cookie: phone, headers: { origin: 'https://evil.example' } })).status, 403);
   ok('Appareil associé : bibliothèque, lecture (Range), playlists ; réglages du PC masqués ; origine étrangère refusée');
 
+  // Envoi d'un fichier audio depuis le téléphone
+  const findAudio = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) {
+        const r = findAudio(f);
+        if (r) return r;
+      } else if (f.endsWith('.mp3')) return f;
+    }
+  };
+  const sample = fs.readFileSync(findAudio(libDir));
+  const uploadsDir = path.join(dataDir, 'Envois du téléphone');
+  const upload = (name, data, { cookie = phone, mb = true } = {}) =>
+    fetch(`${rbase}/api/upload?name=${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', ...(mb ? { 'x-mb': '1' } : {}), ...(cookie ? { cookie } : {}) },
+      body: data,
+    }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => undefined) }));
+  const before = (await rcall('GET', '/api/tracks', { cookie: phone })).json.length;
+  r = await upload('Mon envoi.mp3', sample);
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  assert.equal(r.json.duplicate, false);
+  assert.ok(r.json.track.id > 0 && r.json.track.duration > 0);
+  const up1 = r.json.track;
+  assert.ok(fs.existsSync(path.join(uploadsDir, 'Mon envoi.mp3')), 'le fichier arrive dans le dossier réservé');
+  assert.deepEqual(fs.readdirSync(uploadsDir).filter((f) => f.endsWith('.part')), []);
+  assert.equal((await rcall('GET', '/api/tracks', { cookie: phone })).json.length, before + 1);
+  assert.equal((await rcall('GET', `/api/stream/${up1.id}`, { cookie: phone, headers: { range: 'bytes=0-99' } })).status, 206);
+  assert.deepEqual((await get('/api/settings')).json.musicDirs.filter((d) => d.includes('Envois')), [], 'pas dans les dossiers de musique');
+  assert.equal((await get('/api/settings')).json.uploadsDir, uploadsDir);
+  assert.equal((await rcall('GET', '/api/settings', { cookie: phone })).json.uploadsDir, '');
+  ok('Envoi depuis le téléphone : fichier rangé dans « Envois du téléphone », titre analysé, lisible, hors dossiers de musique');
+
+  r = await upload('Mon envoi.mp3', sample);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.duplicate, true);
+  assert.equal(r.json.track.id, up1.id);
+  assert.equal(fs.readdirSync(uploadsDir).length, 1);
+  ok('Même fichier renvoyé : pas de doublon');
+
+  r = await upload('..\\..\\evil:name?.mp3', Buffer.concat([sample, Buffer.from([0])]));
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  assert.ok(fs.readdirSync(uploadsDir).includes('evil name.mp3'), 'nom nettoyé : ' + fs.readdirSync(uploadsDir));
+  assert.ok(!fs.existsSync(path.join(dataDir, 'evil name.mp3')));
+  ok('Nom de fichier nettoyé (pas de sortie du dossier réservé)');
+
+  r = await upload('notes.txt', Buffer.from('bonjour'));
+  assert.equal(r.status, 415);
+  r = await upload('faux.mp3', Buffer.from('ceci n\'est pas de l\'audio'));
+  assert.equal(r.status, 415);
+  assert.ok(!fs.existsSync(path.join(uploadsDir, 'faux.mp3')), 'fichier illisible supprimé');
+  assert.equal((await upload('vide.mp3', Buffer.alloc(0))).status, 400);
+  ok('Extension inconnue, fichier illisible ou vide : refusés proprement');
+
+  assert.equal((await upload('x.mp3', sample, { cookie: null })).status, 401);
+  assert.equal((await upload('x.mp3', sample, { mb: false })).status, 403);
+  ok('Envoi refusé sans appareil associé ni en-tête x-mb');
+
   // Actions réservées au PC
   for (const [m, u, b] of [
     ['PUT', '/api/settings', { musicDirs: [] }],

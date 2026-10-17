@@ -201,6 +201,17 @@ Rose, Menthe, Citron, Glacier, Graphite). Le choix est garde sur chaque
 appareil : le PC et le telephone peuvent avoir le leur.
 
 
+ENVOYER DE LA MUSIQUE DU TELEPHONE VERS LE PC
+---------------------------------------------
+Dans l'application du telephone : onglet "Bibliotheque" > "Envoyer de la musique
+vers le PC" (ou "Parametres"). Choisis un ou plusieurs fichiers audio : ils sont
+copies sur le PC dans un dossier reserve, "Envois du telephone" (dans le dossier
+des donnees de l'application, affiche dans "Parametres" sur le PC), a part de
+ta musique habituelle. Ils sont ajoutes a la bibliotheque et se lisent comme
+le reste. Renvoyer le meme fichier ne cree pas de doublon.
+Le PC doit etre allume, avec Ma Bibliotheque lancee et l'acces telephone active.
+
+
 PREMIERE UTILISATION
 --------------------
 Au premier lancement, choisis le dossier qui contient ta musique

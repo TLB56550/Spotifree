@@ -7,7 +7,7 @@ import type { ScanStatus } from '../../shared/types';
 import { tx, type DB } from './db';
 import { errMsg, isUnder, norm, pathKey } from './util';
 
-const AUDIO_EXT = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wav']);
+export const AUDIO_EXT = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wav']);
 const FOLDER_COVER_NAMES = ['cover', 'folder', 'front', 'album', 'albumart'];
 const IMAGE_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -127,6 +127,12 @@ export class Scanner {
     }
     void this.run(Boolean(opts.full)).catch((e) => this.log(`Analyse interrompue : ${errMsg(e)}`));
     return true;
+  }
+
+  /** Attend la fin des analyses en cours ou en attente (60 s au plus). */
+  async whenIdle(): Promise<void> {
+    const end = Date.now() + 60_000;
+    while ((this.running || this.rerun) && Date.now() < end) await new Promise((r) => setTimeout(r, 80));
   }
 
   /** Surveille les dossiers : une analyse se relance quand des fichiers changent. */

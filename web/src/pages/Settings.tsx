@@ -7,6 +7,7 @@ import { invalidateLibrary } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 import { FolderManager, ScanProgress, useSettings } from '../components/Folders';
 import { Appearance } from '../components/Appearance';
+import { UploadList, UploadPicker } from '../components/Uploads';
 import { PhoneAccess } from '../components/PhoneAccess';
 import { changeNativeServer, isNativeApp } from '../lib/native';
 import { useState } from 'react';
@@ -97,6 +98,16 @@ export default function SettingsPage() {
           )}
         </section>
         <section className="setting-block">
+          <h2>Envoyer de la musique vers le PC</h2>
+          <p className="muted">
+            Les fichiers audio choisis sur ce téléphone sont copiés dans un dossier réservé de ton PC (« Envois du téléphone »), séparé de ta musique habituelle, puis ajoutés à la bibliothèque.
+          </p>
+          <div className="setting-actions">
+            <UploadPicker variant="button" />
+          </div>
+          <UploadList />
+        </section>
+        <section className="setting-block">
           <h2>Ce téléphone</h2>
           <p className="muted">
             Associé à ton PC sous le nom « {settings.deviceName ?? 'Téléphone'} ». Les dossiers de musique, l’analyse et l’arrêt du programme se gèrent depuis le PC.
@@ -143,6 +154,11 @@ export default function SettingsPage() {
         <h2>Dossiers de musique</h2>
         <p className="muted">Ces dossiers sont analysés, sous-dossiers compris. Les nouveaux fichiers sont détectés automatiquement.</p>
         <FolderManager />
+        {settings?.uploadsDir && (
+          <p className="muted small">
+            Les fichiers envoyés depuis le téléphone arrivent dans <code>{settings.uploadsDir}</code>. Ce dossier est analysé en plus des dossiers ci-dessus ; il est séparé de ta musique habituelle.
+          </p>
+        )}
       </section>
 
       <section className="setting-block">

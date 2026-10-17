@@ -2905,3 +2905,115 @@ kbd {
 .card:hover {
   background: color-mix(in srgb, var(--accent) 9%, var(--raised));
 }
+
+/* ------------------------------------------------------------------ envoi de musique vers le PC */
+.uploads {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+.uploads ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--raised));
+}
+.upload-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.upload-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.upload.is-done .upload-icon,
+.upload.is-duplicate .upload-icon {
+  background: var(--accent);
+  color: var(--on-accent, #111);
+}
+.upload.is-error .upload-icon {
+  background: rgba(255, 120, 100, 0.18);
+  color: #ff8f7a;
+}
+.upload-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.upload-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+}
+.upload-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.upload.is-error .upload-sub {
+  color: #ff8f7a;
+}
+.upload .progress {
+  display: block;
+  margin-top: 5px;
+  height: 4px;
+}
+.upload .progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.upload-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding: 9px 12px 11px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 14%, var(--raised));
+  font-size: 13.5px;
+}
+.upload-banner svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--accent);
+}
+.upload-banner-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.upload-banner-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
