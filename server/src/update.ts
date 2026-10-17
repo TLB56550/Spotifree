@@ -14,6 +14,10 @@ import { errMsg } from './util';
 export const EXIT_RESTART = 75;
 
 const REPO = 'TLB56550/Spotifree';
+// Source principale : le flux Atom des publications (pas de limite d'appels, contrairement à l'API GitHub, limitée à 60/heure par adresse).
+const FEED_URL = process.env.UPDATE_FEED_URL || `https://github.com/${REPO}/releases.atom`;
+const DOWNLOAD_BASE = process.env.UPDATE_DOWNLOAD_BASE || `https://github.com/${REPO}/releases/download`;
+// Secours : l'API GitHub.
 const API_URL = process.env.UPDATE_API_URL || `https://api.github.com/repos/${REPO}/releases?per_page=30`;
 const ASSET_NAME = 'Ma-Bibliotheque-app.tar.gz';
 const MAX_BUNDLE = 150 * 1024 * 1024;
@@ -74,6 +78,17 @@ export function pickRelease(releases: GhRelease[]): Candidate | null {
     }
   }
   return best;
+}
+
+/** La version « pc-X.Y.Z » la plus récente d'un flux Atom de publications. */
+export function pickFromFeed(xml: string): Candidate | null {
+  let best: string | null = null;
+  for (const m of xml.matchAll(/releases\/tag\/pc-(\d+\.\d+\.\d+)(?=["<\s])/g)) {
+    if (!best || compareVersions(m[1]!, best) > 0) best = m[1]!;
+  }
+  if (!best) return null;
+  const base = `${DOWNLOAD_BASE}/pc-${best}/${ASSET_NAME}`;
+  return { version: best, url: base, size: 0, sha256Url: `${base}.sha256`, sha256: null };
 }
 
 function run(cmd: string, args: string[], cwd: string): Promise<void> {
@@ -149,8 +164,18 @@ export class Updater {
   }
 
   private async find(): Promise<Candidate | null> {
+    const headers = { 'user-agent': 'ma-bibliotheque' };
+    // Le flux Atom d'abord ; l'API seulement s'il est injoignable (ou si seule l'API est configurée, pour les tests).
+    if (!process.env.UPDATE_API_URL || process.env.UPDATE_FEED_URL) {
+      try {
+        const res = await fetch(FEED_URL, { headers, signal: AbortSignal.timeout(10_000) });
+        if (res.ok) return pickFromFeed(await res.text());
+      } catch {
+        // Repli sur l'API.
+      }
+    }
     const res = await fetch(API_URL, {
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'ma-bibliotheque' },
+      headers: { ...headers, accept: 'application/vnd.github+json' },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`GitHub a répondu ${res.status}`);
@@ -165,12 +190,14 @@ export class Updater {
     }
     if (!expected) throw new Error("empreinte de vérification introuvable");
     if (c.size > MAX_BUNDLE) throw new Error('paquet trop volumineux');
+    let total = c.size;
 
     const dir = path.join(this.dataDir, 'update');
     await fsp.mkdir(dir, { recursive: true });
     const file = path.join(dir, `${ASSET_NAME}.part`);
     const res = await fetch(c.url, { redirect: 'follow', signal: AbortSignal.timeout(180_000), headers: { 'user-agent': 'ma-bibliotheque' } });
     if (!res.ok || !res.body) throw new Error(`téléchargement refusé (${res.status})`);
+    if (!total) total = Number(res.headers.get('content-length') ?? 0);
     const hash = crypto.createHash('sha256');
     let got = 0;
     const meter = new Transform({
@@ -178,7 +205,7 @@ export class Updater {
         got += chunk.length;
         if (got > MAX_BUNDLE) return cb(new Error('paquet trop volumineux'));
         hash.update(chunk);
-        if (c.size > 0) this.st.progress = Math.min(1, got / c.size);
+        if (total > 0) this.st.progress = Math.min(1, got / total);
         cb(null, chunk);
       },
     });

@@ -10,6 +10,7 @@ import { Cover } from './Cover';
 import { LikeButton } from './Controls';
 import { QueueBody } from './QueuePanel';
 import { Slider } from './Slider';
+import { SoundButton } from './SoundPanel';
 
 /**
  * L'écran « lecture en cours » est une entrée de l'historique (#playing) :
@@ -134,6 +135,7 @@ export function NowPlaying() {
           <span>Lecture depuis</span>
           <strong>{context?.label ?? 'ta bibliothèque'}</strong>
         </div>
+        <SoundButton />
         {current ? (
           <button type="button" className="icon-btn" aria-label="Plus d’options" onClick={(e) => openBelow(e, menus.track(current))}>
             <MoreHorizontal />

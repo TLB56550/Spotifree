@@ -46,6 +46,14 @@ const fake = http.createServer((req, res) => {
     if (!releases) return res.writeHead(503).end();
     return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(releases));
   }
+  if (req.url === '/feed') {
+    const entries = ['pc-9.9.9', 'apk-12', 'pc-9.9.10-test', 'pc-0.0.1'];
+    return res.writeHead(200, { 'content-type': 'application/atom+xml' }).end(
+      `<feed>${entries.map((t) => `<entry><link rel="alternate" href="https://github.com/x/y/releases/tag/${t}"/><title>${t}</title></entry>`).join('')}</feed>`,
+    );
+  }
+  if (req.url === '/dl/pc-9.9.9/Ma-Bibliotheque-app.tar.gz') return res.writeHead(200, { 'content-length': good.length }).end(good);
+  if (req.url === '/dl/pc-9.9.9/Ma-Bibliotheque-app.tar.gz.sha256') return res.end(`${sha(good)}  Ma-Bibliotheque-app.tar.gz\n`);
   if (req.url === '/bundle') return res.writeHead(200, { 'content-length': good.length }).end(good);
   res.writeHead(404).end();
 });
@@ -107,6 +115,17 @@ try {
   assert.ok(!fs.existsSync(path.join(dir, 'app', 'public', 'assets', 'ancien-fichier.js')), "l'ancienne interface est remplacée");
   assert.ok(fs.existsSync(path.join(tmp, 'data-ok', 'update', 'backup', 'server.mjs')), 'sauvegarde de la version précédente');
   ok('Version plus récente : téléchargée, vérifiée, installée, redémarrage demandé (code 75)');
+
+  // 1b. Même chose par le flux Atom des publications (sans l'API GitHub, limitée en nombre d'appels)
+  mode = 'down'; // l'API est volontairement en panne : seul le flux doit servir
+  dir = install('feed');
+  const fp = fake.address().port;
+  s = start(dir, { UPDATE_FEED_URL: `http://127.0.0.1:${fp}/feed`, UPDATE_DOWNLOAD_BASE: `http://127.0.0.1:${fp}/dl` });
+  await until(() => s.code !== undefined, 30000);
+  assert.equal(s.code, 75, s.logs);
+  assert.match(fs.readFileSync(path.join(dir, 'app', 'server.mjs'), 'utf8'), /9\.9\.9/);
+  ok('Flux Atom des publications : version trouvée, paquet et empreinte récupérés, installée');
+  mode = 'good';
 
   // 2. Fichier altéré : rien n'est installé, l'application continue
   mode = 'tampered';

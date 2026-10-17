@@ -7,6 +7,7 @@ import { invalidateLibrary, queryClient } from './lib/queryClient';
 import { ScrollContext } from './hooks/scroll';
 import { useShortcuts } from './hooks/useShortcuts';
 import { useIsMobile } from './hooks/useMobile';
+import { initSound } from './lib/sound';
 import { useLikes } from './store/likes';
 import { usePlayer } from './store/player';
 import { useUI } from './store/ui';
@@ -18,6 +19,7 @@ import { ContextMenuHost } from './components/ContextMenu';
 import { ModalHost, ToastHost } from './components/Modals';
 import { PageMessage } from './components/Hero';
 import { ConnectionBanner } from './components/ConnectionBanner';
+import { SoundPanelHost } from './components/SoundPanel';
 import { UpdateGate } from './components/UpdateGate';
 import { UploadBanner, UploadFloat } from './components/Uploads';
 import { MiniPlayer, NowPlaying, TabBar } from './components/Mobile';
@@ -90,6 +92,7 @@ export default function App() {
   useScanWatcher();
 
   useEffect(() => {
+    initSound();
     void usePlayer.getState().restore();
     void useLikes.getState().load();
   }, []);
@@ -121,6 +124,7 @@ export default function App() {
           <NowPlaying />
           <ContextMenuHost />
           <ModalHost />
+          <SoundPanelHost />
           <ToastHost />
         </div>
       ) : (
@@ -135,6 +139,7 @@ export default function App() {
           <UploadFloat />
           <ContextMenuHost />
           <ModalHost />
+          <SoundPanelHost />
           <ToastHost />
         </div>
       )}

@@ -7,6 +7,7 @@ import { invalidateLibrary } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 import { FolderManager, ScanProgress, useSettings } from '../components/Folders';
 import { Appearance } from '../components/Appearance';
+import { SoundSettings } from '../components/SoundPanel';
 import { UpdateSection } from '../components/UpdateSection';
 import { UploadList, UploadPicker } from '../components/Uploads';
 import { PhoneAccess } from '../components/PhoneAccess';
@@ -87,6 +88,11 @@ export default function SettingsPage() {
         </header>
         <Appearance />
         <section className="setting-block">
+          <h2>Son</h2>
+          <p className="muted">Le choix est gardé sur cet appareil. Il règle l’égaliseur selon ce qui diffuse le son et l’ambiance voulue.</p>
+          <SoundSettings />
+        </section>
+        <section className="setting-block">
           <h2>Ta bibliothèque</h2>
           {stats && (
             <dl className="stats">
@@ -150,6 +156,12 @@ export default function SettingsPage() {
       </header>
 
       <Appearance />
+
+      <section className="setting-block">
+        <h2>Son</h2>
+        <p className="muted">Le choix est gardé sur cet appareil. Il règle l’égaliseur selon ce qui diffuse le son et l’ambiance voulue.</p>
+        <SoundSettings />
+      </section>
 
       <section className="setting-block">
         <h2>Dossiers de musique</h2>

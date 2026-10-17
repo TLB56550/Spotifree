@@ -218,6 +218,17 @@ Rose, Menthe, Citron, Glacier, Graphite). Le choix est garde sur chaque
 appareil : le PC et le telephone peuvent avoir le leur.
 
 
+SON : APPAREIL D'ECOUTE ET AMBIANCE
+-----------------------------------
+Bouton "Son" (curseurs) dans le lecteur, ou "Parametres" > "Son". Deux choix :
+- "J'ecoute avec" : Standard, Casque, Ecouteurs ou Haut-parleur (corrige le
+  grave et les aigus selon ce qui diffuse le son) ;
+- "Ambiance" : Neutre, Rock, Jazz, Chanson, Techno, Hip-hop, Pop, Classique,
+  Acoustique.
+Les deux se cumulent. Le choix est garde sur chaque appareil (PC et telephone
+separement). "Standard" + "Neutre" = son d'origine, sans aucun traitement.
+
+
 IMPORTER DE LA MUSIQUE (PC ET TELEPHONE)
 ----------------------------------------
 Sur le PC : bouton "Importer des fichiers" en bas de la colonne de gauche (ou

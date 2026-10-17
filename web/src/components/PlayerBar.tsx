@@ -7,6 +7,7 @@ import { useUI } from '../store/ui';
 import { Cover } from './Cover';
 import { LikeButton } from './Controls';
 import { Slider } from './Slider';
+import { SoundButton } from './SoundPanel';
 
 function SeekBar() {
   const time = usePlayer((s) => s.time);
@@ -120,6 +121,7 @@ export function PlayerBar() {
       </div>
 
       <div className="player-right">
+        <SoundButton />
         <button type="button" className={`icon-btn ${queueOpen ? 'is-on' : ''}`} aria-label="File d’attente" aria-pressed={queueOpen} onClick={toggleQueue}>
           <ListMusic />
         </button>

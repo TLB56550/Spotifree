@@ -2948,7 +2948,7 @@ kbd {
 .upload.is-done .upload-icon,
 .upload.is-duplicate .upload-icon {
   background: var(--accent);
-  color: var(--on-accent, #111);
+  color: var(--accent-ink);
 }
 .upload.is-error .upload-icon {
   background: rgba(255, 120, 100, 0.18);
@@ -3097,4 +3097,139 @@ kbd {
   width: 40px;
   height: 40px;
   color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ son : appareil d'écoute et ambiance */
+.sound-title {
+  margin: 14px 0 8px;
+  font-size: 15px;
+}
+.sound-title:first-child {
+  margin-top: 0;
+}
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.device-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--raised));
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.device-btn svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.device-btn:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--raised));
+}
+.device-btn.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.style-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.style-chip {
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--raised));
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.style-chip:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--raised));
+}
+.style-chip.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.eq-curve {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  height: 64px;
+  margin-top: 16px;
+}
+.eq-band {
+  position: relative;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.eq-band::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 25%, transparent);
+}
+.eq-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: height 0.2s;
+}
+.sound-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+.sound-panel {
+  position: fixed;
+  z-index: 301;
+  right: 16px;
+  bottom: 96px;
+  width: min(400px, calc(100vw - 32px));
+  padding: 16px 18px 20px;
+  border-radius: 16px;
+  background: var(--raised);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+.sound-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.sound-panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.is-mobile .sound-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1100;
+}
+.is-mobile .sound-panel {
+  z-index: 1101;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  border-radius: 20px 20px 0 0;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
