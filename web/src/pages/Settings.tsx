@@ -6,6 +6,7 @@ import { formatTotal, plural } from '../lib/format';
 import { invalidateLibrary } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 import { FolderManager, ScanProgress, useSettings } from '../components/Folders';
+import { Appearance } from '../components/Appearance';
 import { PhoneAccess } from '../components/PhoneAccess';
 import { changeNativeServer, isNativeApp } from '../lib/native';
 import { useState } from 'react';
@@ -82,6 +83,7 @@ export default function SettingsPage() {
         <header className="page-head">
           <h1>Paramètres</h1>
         </header>
+        <Appearance />
         <section className="setting-block">
           <h2>Ta bibliothèque</h2>
           {stats && (
@@ -134,6 +136,8 @@ export default function SettingsPage() {
       <header className="page-head">
         <h1>Paramètres</h1>
       </header>
+
+      <Appearance />
 
       <section className="setting-block">
         <h2>Dossiers de musique</h2>

@@ -11,6 +11,20 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Ma Bibliothèque</title>
+    <script>
+      // Réapplique le thème choisi avant le premier affichage, pour éviter un éclair sombre en mode clair.
+      try {
+        var t = JSON.parse(localStorage.getItem('mb.theme.vars') || 'null');
+        if (t && t.vars) {
+          var r = document.documentElement;
+          for (var k in t.vars) r.style.setProperty(k, t.vars[k]);
+          r.style.colorScheme = t.mode;
+          r.style.background = t.vars['--bg'];
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute('content', t.vars['--bg']);
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

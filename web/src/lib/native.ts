@@ -6,6 +6,7 @@ interface AndroidBridge {
   update(title: string, artist: string, album: string, artwork: string, playing: boolean, positionMs: number, durationMs: number): void;
   stop(): void;
   changeServer(): void;
+  setBars?(color: string, light: boolean): void;
 }
 
 function bridge(): AndroidBridge | null {
@@ -49,4 +50,13 @@ export function registerNativeCommands(run: (command: string, value?: number) =>
       run(String(name), typeof value === 'number' ? value : undefined);
     },
   };
+}
+
+/** Colore la barre d'état et la barre de navigation d'Android comme le thème de l'application. */
+export function setNativeBars(color: string, light: boolean): void {
+  try {
+    bridge()?.setBars?.(color, light);
+  } catch {
+    // Ancienne version de l'application : les barres gardent leur couleur.
+  }
 }

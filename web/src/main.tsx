@@ -6,6 +6,9 @@ import '@fontsource-variable/bricolage-grotesque/index.css';
 import './styles.css';
 import App from './App';
 import { queryClient } from './lib/queryClient';
+import { initTheme } from './lib/theme';
+
+initTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

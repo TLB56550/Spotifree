@@ -193,6 +193,14 @@ Sans installer : "Lancer Ma Bibliotheque.bat" fonctionne aussi directement
 depuis ce dossier.
 
 
+APPARENCE
+---------
+"Parametres" > "Apparence" : mode Sombre, Clair ou Auto (suit le reglage de
+l'appareil) et 10 palettes de couleurs (Ambre, Emeraude, Corail, Ocean, Violet,
+Rose, Menthe, Citron, Glacier, Graphite). Le choix est garde sur chaque
+appareil : le PC et le telephone peuvent avoir le leur.
+
+
 PREMIERE UTILISATION
 --------------------
 Au premier lancement, choisis le dossier qui contient ta musique
