@@ -27,7 +27,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compiler l'APK (numéro de version 1 : la mise à jour doit être proposée)
+      - name: Compiler l'APK (numéro de version 1, pour tester la mise à jour)
         working-directory: android
         env:
           VERSION_CODE: '1'
