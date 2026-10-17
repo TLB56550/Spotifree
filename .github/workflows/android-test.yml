@@ -43,6 +43,20 @@ jobs:
           nohup python3 -m http.server 4243 --bind 0.0.0.0 > /tmp/site.log 2>&1 &
           sleep 1
           curl -s localhost:4243 | head -3
+          # Un « PC » qui refuse les appareils non associés (accès téléphone désactivé) : réponse 403 en JSON.
+          cat > /tmp/refuse.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class H(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(403)
+                  self.send_header('Content-Type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(b'{"error":"Acces refuse"}')
+          HTTPServer(('0.0.0.0', 4244), H).serve_forever()
+          PY
+          nohup python3 /tmp/refuse.py > /tmp/refuse.log 2>&1 &
+          sleep 1
+          curl -s -o /dev/null -w "403 test: %{http_code}\n" localhost:4244
 
       - name: Lancer l'émulateur et tester
         uses: reactivecircus/android-emulator-runner@v2

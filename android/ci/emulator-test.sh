@@ -43,26 +43,29 @@ sleep 1
 adb shell input text "10.0.2.2:4243"
 sleep 1
 shot 2-saisie
-adb shell input keyevent 4   # ferme le clavier
-sleep 1
-tap text "Se connecter"
-sleep 8
+adb shell input keyevent 66   # Entrée = « Se connecter »
+sleep 3
+shot 3a-chargement
+sleep 6
 shot 3-connexion
 
 # 3) adresse injoignable : un message d'erreur doit apparaître (pas un écran noir)
-adb shell pm clear $PKG
-adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
-adb shell am start -n $PKG/.MainActivity
-sleep 5
-tap class android.widget.EditText
-sleep 1
-adb shell input text "10.0.2.2:9"
-sleep 1
-adb shell input keyevent 4
-sleep 1
-tap text "Se connecter"
-sleep 10
-shot 4-injoignable
+try_address() {
+  adb shell pm clear $PKG
+  adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
+  adb shell am start -n $PKG/.MainActivity
+  sleep 5
+  tap class android.widget.EditText
+  sleep 1
+  adb shell input text "$1"
+  sleep 1
+  adb shell input keyevent 66
+  sleep "$2"
+  shot "$3"
+}
+try_address "10.0.2.2:9" 12 4-injoignable
+# 4) le PC répond « 403 » (accès téléphone désactivé) : message explicite, pas un écran noir
+try_address "10.0.2.2:4244" 6 5-refuse
 
 adb logcat -d > "$OUT/logcat-complet.txt"
 grep -iE "AndroidRuntime|spotifree|FATAL|chromium.*(ERR|error)" "$OUT/logcat-complet.txt" | head -200 > "$OUT/logcat.txt"
