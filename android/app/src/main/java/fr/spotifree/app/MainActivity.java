@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -370,6 +371,25 @@ public class MainActivity extends Activity {
         });
     }
 
+    @SuppressWarnings("deprecation")
+    private void applyBars(String color, boolean light) {
+        try {
+            int c = Color.parseColor(color);
+            getWindow().setStatusBarColor(c);
+            getWindow().setNavigationBarColor(c);
+            root.setBackgroundColor(c);
+            if (web != null) web.setBackgroundColor(c);
+            int flags = 0;
+            if (light) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+        } catch (IllegalArgumentException ignored) {
+            // Couleur illisible : les barres gardent leur teinte.
+        }
+    }
+
     /** Ce que la page peut demander à l'application (la page est toujours celle de ton PC). */
     public class Bridge {
         @JavascriptInterface
@@ -380,6 +400,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void stop() {
             PlaybackService.halt();
+        }
+
+        /** Colore la barre d'état et la barre de navigation comme le thème choisi dans l'application. */
+        @JavascriptInterface
+        public void setBars(final String color, final boolean light) {
+            runOnUiThread(() -> applyBars(color, light));
         }
 
         @JavascriptInterface

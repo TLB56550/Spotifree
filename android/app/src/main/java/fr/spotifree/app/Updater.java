@@ -8,16 +8,15 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.os.Build;
+import android.util.Log;
 import android.widget.Toast;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Mises à jour : au démarrage, compare la version installée à la dernière version publiée sur GitHub.
@@ -25,7 +24,9 @@ import java.net.URL;
  * Le numéro de version est celui de la compilation (« apk-12 » = versionCode 12).
  */
 final class Updater {
-    private static final String LATEST_API = "https://api.github.com/repos/TLB56550/Spotifree/releases/latest";
+    private static final String TAG = "Spotifree";
+    private static final String LATEST_PAGE = "https://github.com/TLB56550/Spotifree/releases/latest";
+    private static final String APK_URL = "https://github.com/TLB56550/Spotifree/releases/latest/download/Spotifree.apk";
     private static final String ASSET_NAME = "Spotifree.apk";
 
     private static boolean checked;
@@ -62,55 +63,39 @@ final class Updater {
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         c.setRequestProperty("User-Agent", "Spotifree-Android");
-        c.setRequestProperty("Accept", "application/vnd.github+json");
-        return c;
+                return c;
     }
 
     private static void check(final Activity activity) {
         try {
-            HttpURLConnection c = open(LATEST_API);
-            if (c.getResponseCode() != 200) return; // pas de réseau, dépôt privé... : on ne dérange pas
-            ByteArrayOutputStream buf = new ByteArrayOutputStream();
-            try (InputStream in = c.getInputStream()) {
-                byte[] chunk = new byte[8192];
-                int n;
-                while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
-            }
+            // Pas d'API GitHub (limitée en nombre d'appels) : la page « latest » redirige vers la dernière version.
+            HttpURLConnection c = open(LATEST_PAGE);
+            c.setInstanceFollowRedirects(false);
+            int code = c.getResponseCode();
+            String location = c.getHeaderField("Location");
             c.disconnect();
-            JSONObject release = new JSONObject(buf.toString("UTF-8"));
-            String tag = release.optString("tag_name", "");
-            if (!tag.startsWith("apk-")) return;
-            final int latest = Integer.parseInt(tag.substring(4));
-            if (latest <= installedVersion(activity)) return;
-
-            String url = null;
-            long size = -1;
-            JSONArray assets = release.optJSONArray("assets");
-            if (assets != null) {
-                for (int i = 0; i < assets.length(); i++) {
-                    JSONObject asset = assets.getJSONObject(i);
-                    if (ASSET_NAME.equals(asset.optString("name"))) {
-                        url = asset.optString("browser_download_url", null);
-                        size = asset.optLong("size", -1);
-                    }
-                }
-            }
-            if (url == null) return;
-            final String apkUrl = url;
-            final long apkSize = size;
-            activity.runOnUiThread(() -> propose(activity, latest, apkUrl, apkSize));
-        } catch (Exception ignored) {
+            Log.i(TAG, "Recherche de mise à jour : HTTP " + code + " -> " + location);
+            if (location == null) return;
+            Matcher m = Pattern.compile("/releases/tag/apk-(\\d+)").matcher(location);
+            if (!m.find()) return;
+            final int latest = Integer.parseInt(m.group(1));
+            final int installed = installedVersion(activity);
+            Log.i(TAG, "Version installée " + installed + ", dernière version " + latest);
+            if (latest <= installed) return;
+            activity.runOnUiThread(() -> propose(activity, latest));
+        } catch (Exception e) {
             // Vérification impossible (hors ligne, GitHub injoignable) : l'application démarre normalement.
+            Log.w(TAG, "Recherche de mise à jour impossible : " + e);
         }
     }
 
-    private static void propose(final Activity activity, final int latest, final String url, final long size) {
+    private static void propose(final Activity activity, final int latest) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
         new AlertDialog.Builder(activity)
                 .setTitle("Mise à jour disponible")
                 .setMessage("Une nouvelle version de Spotifree est disponible (version 1.0." + latest
                         + ", tu as la 1.0." + installedVersion(activity) + ").\n\nLa télécharger et l'installer maintenant ?")
-                .setPositiveButton("Mettre à jour", (d, w) -> download(activity, url, size))
+                .setPositiveButton("Mettre à jour", (d, w) -> download(activity, APK_URL, -1))
                 .setNegativeButton("Plus tard", null)
                 .show();
     }
