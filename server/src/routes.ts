@@ -10,6 +10,7 @@ import * as q from './queries';
 import { PAIR_PAGE } from './pairPage';
 import { isLocalRequest, type RemoteAccess } from './remote';
 import type { Scanner } from './scanner';
+import type { Updater } from './update';
 import { HttpError, errMsg, mustInt, pathKey, toInt } from './util';
 import { AUDIO_EXT } from './scanner';
 import { Transform } from 'node:stream';
@@ -21,6 +22,7 @@ export interface Ctx {
   dataDir: string;
   coversDir: string;
   uploadsDir: string;
+  updater: Updater;
   publicDir: string | null;
   host: string;
   port: number;
@@ -319,6 +321,13 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
   app.get('/api/scan', async () => scanner.status);
   app.get('/api/stats', async () => q.getStats(db));
+
+  app.get('/api/update', async () => ctx.updater.status());
+  app.post('/api/update/check', async (req) => {
+    requireLocal(req);
+    void ctx.updater.check();
+    return ctx.updater.status();
+  });
 
   app.post('/api/shutdown', async (req, reply) => {
     requireLocal(req);

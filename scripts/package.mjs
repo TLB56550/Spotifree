@@ -80,9 +80,19 @@ echo   Garde cette fenetre ouverte pendant que tu ecoutes ta musique.
 echo   Pour quitter : bouton "Arreter" dans Parametres, ou ferme cette fenetre.
 echo.
 
+:demarrage
 "runtime\\node.exe" --no-warnings "app\\server.mjs"
+set CODE=%ERRORLEVEL%
 
-if errorlevel 1 (
+rem Code 75 = une mise a jour vient d'etre installee : on relance (la fenetre deja ouverte se recharge seule).
+if "%CODE%"=="75" (
+  echo.
+  echo   Mise a jour installee. Redemarrage...
+  set OPEN_BROWSER=0
+  goto demarrage
+)
+
+if not "%CODE%"=="0" (
   echo.
   echo   Une erreur est survenue. Le message ci-dessus explique pourquoi.
   echo   Appuie sur une touche pour fermer.
@@ -163,6 +173,13 @@ exit /b 1
 `;
 fs.writeFileSync(path.join(stage, 'Installer Ma Bibliotheque.bat'), crlf(installer));
 fs.copyFileSync(path.join(root, 'assets', 'icone.ico'), path.join(stage, 'app', 'icone.ico'));
+
+// Paquet de mise à jour automatique : seulement le dossier « app » (le programme et l'interface, ~1 Mo).
+step('Paquet de mise à jour automatique');
+const bundle = path.join(releaseDir, 'Ma-Bibliotheque-app.tar.gz');
+run('tar', ['-czf', bundle, '-C', stage, 'app']);
+fs.writeFileSync(`${bundle}.sha256`, `${sha256(bundle)}  Ma-Bibliotheque-app.tar.gz\n`);
+console.log(`  ${bundle} (${(fs.statSync(bundle).size / 1024).toFixed(0)} Ko)`);
 
 const readme = `MA BIBLIOTHEQUE  -  version ${version}
 =====================================
@@ -304,8 +321,15 @@ Playlists, likes et historique sont dans :
 (tape ca dans la barre d'adresse de l'Explorateur). Tes fichiers de musique
 ne sont jamais modifies ni deplaces : l'application ne fait que les lire.
 
-Pour mettre a jour : extrais la nouvelle version et relance son installateur :
-il remplace l'ancienne version, tes playlists et tes likes sont gardes.
+Mise a jour : automatique. A chaque demarrage, l'application regarde si une
+version plus recente est publiee (https://github.com/TLB56550/Spotifree/releases),
+la telecharge, verifie son empreinte, l'installe et redemarre toute seule
+(un ecran "Mise a jour" s'affiche quelques secondes). Rien a faire. Si
+internet n'est pas disponible, elle demarre normalement. "Parametres" >
+"Application" permet de verifier a la main.
+Mise a jour manuelle (en secours) : extrais la nouvelle version et relance son
+installateur : il remplace l'ancienne version, tes playlists et tes likes sont
+gardes.
 Pour tout effacer : supprime  %LOCALAPPDATA%\\Programs\\Ma Bibliotheque,
 les deux raccourcis, et le dossier %APPDATA%\\MaBibliotheque.
 

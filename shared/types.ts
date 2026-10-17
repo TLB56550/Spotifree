@@ -153,3 +153,17 @@ export interface Stats {
   playlists: number;
   duration: number;
 }
+
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'downloading' | 'installing' | 'restarting' | 'error';
+  /** Version en cours d'exécution. */
+  current: string;
+  /** Dernière version publiée, une fois la recherche faite. */
+  latest: string | null;
+  /** Avancement du téléchargement (0 à 1). */
+  progress: number;
+  checkedAt: number | null;
+  error: string | null;
+  /** Faux quand l'application tourne depuis les sources (pas de mise à jour automatique). */
+  canInstall: boolean;
+}

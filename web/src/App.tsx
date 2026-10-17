@@ -18,6 +18,7 @@ import { ContextMenuHost } from './components/ContextMenu';
 import { ModalHost, ToastHost } from './components/Modals';
 import { PageMessage } from './components/Hero';
 import { ConnectionBanner } from './components/ConnectionBanner';
+import { UpdateGate } from './components/UpdateGate';
 import { UploadBanner } from './components/Uploads';
 import { MiniPlayer, NowPlaying, TabBar } from './components/Mobile';
 import HomePage from './pages/Home';
@@ -104,6 +105,7 @@ export default function App() {
 
   return (
     <ScrollContext.Provider value={mainRef}>
+      <UpdateGate />
       {mobile ? (
         <div className="m-app">
           <main className="m-main" ref={mainRef}>

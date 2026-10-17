@@ -1,0 +1,61 @@
+name: Construire la version PC
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'web/**'
+      - 'shared/**'
+      - 'scripts/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/pc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compiler
+        run: npm run build
+
+      - name: Tests de l'interface
+        run: npm test
+
+      - name: Test de la mise à jour automatique
+        run: node scripts/update-test.mjs
+
+      - name: Assembler le dossier Windows, le zip et le paquet de mise à jour
+        run: node scripts/package.mjs --skip-build
+
+      - name: Publier (une seule fois par numéro de version)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="pc-$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "La version $VERSION est déjà publiée : rien à faire."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            "release/Ma-Bibliotheque-$VERSION.zip" \
+            release/Ma-Bibliotheque-app.tar.gz \
+            release/Ma-Bibliotheque-app.tar.gz.sha256 \
+            --title "Ma Bibliothèque $VERSION (PC)" \
+            --notes "Version PC $VERSION. Le zip sert à la première installation ; les installations existantes se mettent à jour toutes seules au démarrage." \
+            --latest=false

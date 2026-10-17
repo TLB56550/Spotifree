@@ -7,6 +7,7 @@ import { invalidateLibrary } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 import { FolderManager, ScanProgress, useSettings } from '../components/Folders';
 import { Appearance } from '../components/Appearance';
+import { UpdateSection } from '../components/UpdateSection';
 import { UploadList, UploadPicker } from '../components/Uploads';
 import { PhoneAccess } from '../components/PhoneAccess';
 import { changeNativeServer, isNativeApp } from '../lib/native';
@@ -213,6 +214,7 @@ export default function SettingsPage() {
           </button>
         </div>
         {stats && <p className="muted small">{plural(stats.tracks, 'titre', 'titres')} dans la bibliothèque.</p>}
+        <UpdateSection />
       </section>
     </div>
   );

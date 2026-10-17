@@ -7,6 +7,7 @@ import { getMusicDirs, openDb } from './db';
 import { RemoteAccess } from './remote';
 import { registerRoutes } from './routes';
 import { Scanner } from './scanner';
+import { EXIT_RESTART, Updater } from './update';
 import { errMsg } from './util';
 
 const log = (msg: string) => console.log(`[${new Date().toLocaleTimeString('fr-FR')}] ${msg}`);
@@ -24,7 +25,13 @@ const publicDir = resolvePublicDir();
 
 const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
 const remote = new RemoteAccess(db, app, REMOTE_PORT, log);
-registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, publicDir, host: HOST, port: PORT, remote });
+const quit = (code: number): Promise<void> => {
+  scanner.stopWatching();
+  void remote.close();
+  return app.close().finally(() => process.exit(code));
+};
+const updater = new Updater(dataDir, log, () => quit(EXIT_RESTART));
+registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, updater, publicDir, host: HOST, port: PORT, remote });
 
 const url = `http://127.0.0.1:${PORT}`;
 
@@ -81,11 +88,11 @@ await remote.init();
 if (!getMusicDirs(db).length) log("Aucun dossier de musique n'est configuré : choisis-le depuis l'application.");
 scanner.watch();
 scanner.start();
+// Mise à jour automatique : recherche au démarrage (sans bloquer l'ouverture de l'application).
+if (process.env.UPDATE_DISABLED !== '1' && VERSION !== 'dev') setTimeout(() => void updater.check(), 2000);
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
-    scanner.stopWatching();
-    void remote.close();
-    app.close().finally(() => process.exit(0));
+    void quit(0);
   });
 }

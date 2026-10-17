@@ -17,7 +17,7 @@ fs.mkdirSync(path.join(publicDir, 'assets'));
 fs.writeFileSync(path.join(publicDir, 'assets', 'app.js'), 'console.log(1)');
 
 const server = spawn('node', ['--no-warnings', 'server/dist/server.mjs'], {
-  env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), PUBLIC_DIR: publicDir },
+  env: { ...process.env, UPDATE_DISABLED: '1', DATA_DIR: dataDir, PORT: String(PORT), PUBLIC_DIR: publicDir },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let logs = '';
