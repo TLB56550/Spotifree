@@ -31,6 +31,9 @@ adb install -r "$APK" || exit 1
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
 adb logcat -c
 
+# Attend que le réseau de l'émulateur résolve les noms (sinon la recherche de mise à jour échoue au tout premier lancement).
+for i in $(seq 1 30); do adb shell ping -c 1 -W 2 github.com >/dev/null 2>&1 && break; sleep 4; done
+
 # 0) mise à jour : cet APK porte le numéro 1, la dernière version publiée est plus récente
 adb shell am start -n $PKG/.MainActivity
 sleep 8
