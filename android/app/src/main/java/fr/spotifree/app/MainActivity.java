@@ -1,6 +1,7 @@
 package fr.spotifree.app;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -16,6 +17,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -222,6 +224,8 @@ public class MainActivity extends Activity {
                 message.setText("Cette adresse n'est pas valable. Exemple : 100.64.1.2");
                 return;
             }
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
             serverUrl = url;
             serverOrigin = url;
             prefs().edit().putString(KEY_URL, url).apply();
@@ -273,8 +277,10 @@ public class MainActivity extends Activity {
     private void showError(String detail) {
         handler.removeCallbacks(timeout);
         if (web != null) web.stopLoading();
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BG);
         LinearLayout col = column();
-        col.setBackgroundColor(BG);
         col.setGravity(Gravity.CENTER);
         col.addView(text("Impossible de joindre ton PC", 22, FG, true, Gravity.CENTER_HORIZONTAL));
         col.addView(text(detail, 15, ERROR, false, Gravity.START), stack(12));
@@ -287,7 +293,8 @@ public class MainActivity extends Activity {
                 15, MUTED, false, Gravity.START), stack(16));
         col.addView(button("Réessayer", true, v -> openServer()), stack(24));
         col.addView(button("Changer l'adresse", false, v -> showSetup(null)), stack(10));
-        setOverlay(col, false);
+        scroll.addView(col, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        setOverlay(scroll, false);
     }
 
     // ---------------------------------------------------------------- WebView
