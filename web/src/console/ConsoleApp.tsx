@@ -14,14 +14,7 @@ import { DropHint, UploadPill } from './Uploads';
 import { shutdownServer, useServerState } from './state';
 
 function Vinyl() {
-  return (
-    <svg viewBox="0 0 64 64" className="brand-mark c-mark" aria-hidden>
-      <circle cx="32" cy="32" r="29" fill="#0c0e12" stroke="currentColor" strokeWidth="3" />
-      <circle cx="32" cy="32" r="19" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".4" />
-      <circle cx="32" cy="32" r="10" fill="var(--accent)" />
-      <circle cx="32" cy="32" r="2.6" fill="#0c0e12" />
-    </svg>
-  );
+  return <img src="/icons/logo-serveur.png" className="brand-mark c-mark" alt="" width="30" height="30" />;
 }
 
 const NAV = [

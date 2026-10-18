@@ -165,10 +165,11 @@ code {
   color: var(--text);
 }
 .brand-mark {
+  display: block;
   width: 30px;
   height: 30px;
   flex: none;
-  color: var(--raised-2);
+  object-fit: contain;
 }
 .brand-name {
   font-family: var(--font-display);

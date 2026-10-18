@@ -76,12 +76,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <section className="panel sidebar-top">
         <NavLink to="/" className="brand" aria-label="Ma Bibliothèque, accueil">
-          <svg viewBox="0 0 64 64" className="brand-mark" aria-hidden>
-            <circle cx="32" cy="32" r="29" fill="#0c0e12" stroke="currentColor" strokeWidth="3" />
-            <circle cx="32" cy="32" r="19" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".4" />
-            <circle cx="32" cy="32" r="10" fill="var(--accent)" />
-            <circle cx="32" cy="32" r="2.6" fill="#0c0e12" />
-          </svg>
+          <img src="/icons/logo.png" className="brand-mark" alt="" width="30" height="30" />
           <span className="brand-name">Ma Bibliothèque</span>
         </NavLink>
         <nav className="nav" aria-label="Navigation principale">
