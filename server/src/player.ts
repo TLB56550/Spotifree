@@ -72,6 +72,8 @@ export async function runPlayer(args: string[]): Promise<number> {
     startServerInBackground();
     for (let i = 0; i < 80 && !(await healthy(url)); i++) await sleep(500);
   }
-  openAppWindow(url);
+  await openAppWindow(url);
+  // Laisse à Windows le temps de présenter la fenêtre avant que ce processus ne disparaisse.
+  await sleep(1500);
   return 0;
 }

@@ -6,28 +6,45 @@ import { fileURLToPath } from 'node:url';
 import { VERSION, isWin } from './config';
 import { errMsg } from './util';
 
-/** Ouvre l'application dans une fenêtre dédiée (Edge ou Chrome), sinon dans le navigateur par défaut. */
-export function openAppWindow(url: string): void {
+/**
+ * Ouvre l'application dans une fenêtre dédiée (Edge ou Chrome), sinon dans le navigateur par défaut.
+ * La commande est détachée de ce processus : sous Windows, Node arrête sinon ses enfants (et la fenêtre
+ * qu'ils viennent d'ouvrir) dès qu'il se termine, ce qui est le cas du lecteur juste après l'appel.
+ * La promesse se résout quand la commande de lancement est terminée.
+ */
+export function openAppWindow(url: string): Promise<void> {
   if (process.env.MB_PLAYER_DRY === '1') {
     console.log(`OPEN ${url}`);
-    return;
+    return Promise.resolve();
   }
-  if (!isWin) return;
+  if (!isWin) return Promise.resolve();
   const attempts: string[][] = [
     ['/c', 'start', '', 'msedge', `--app=${url}`],
     ['/c', 'start', '', 'chrome', `--app=${url}`],
     ['/c', 'start', '', url],
   ];
-  const tryNext = (i: number) => {
-    const args = attempts[i];
-    if (!args) return;
-    const child = spawn('cmd', args, { stdio: 'ignore', windowsHide: true });
-    child.on('error', () => tryNext(i + 1));
-    child.on('exit', (code) => {
-      if (code !== 0) tryNext(i + 1);
-    });
-  };
-  tryNext(0);
+  return new Promise((resolve) => {
+    const tryNext = (i: number) => {
+      const args = attempts[i];
+      if (!args) return resolve();
+      let moved = false;
+      const next = () => {
+        if (moved) return;
+        moved = true;
+        tryNext(i + 1);
+      };
+      try {
+        const child = spawn('cmd', args, { stdio: 'ignore', windowsHide: true, detached: true });
+        child.on('error', next);
+        child.on('exit', (code) => (code === 0 ? resolve() : next()));
+        child.unref();
+      } catch {
+        next();
+      }
+    };
+    tryNext(0);
+    setTimeout(resolve, 15_000).unref();
+  });
 }
 
 /** Dossiers de l'installation Windows (« …/app » et « …/runtime »), ou null quand on tourne depuis les sources. */
