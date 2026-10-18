@@ -7,6 +7,7 @@ import { queryClient } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 
 const KEY = ['console', 'sessions'];
+const sorted = (l: ConsoleSession[]) => [...l].sort((a, b) => Number(b.online) - Number(a.online) || b.lastSeen - a.lastSeen);
 const isPhone = (device: string) => !/^(PC|Mac|Appareil Linux)/.test(device);
 
 /** Application Serveur > Appareils : tous les appareils connectés à un compte, avec la possibilité de les déconnecter. */
@@ -42,14 +43,22 @@ export function Devices() {
         <>
           <p className="muted">Un appareil, c’est une connexion d’un compte : le lecteur du PC, un téléphone, un navigateur. Déconnecter un appareil ne supprime rien.</p>
           <ul className="device-list c-devices">
-            {data.map((s) => (
+            {sorted(data).map((s) => (
               <li key={s.id}>
                 {isPhone(s.device) ? <Smartphone aria-hidden /> : <Monitor aria-hidden />}
                 <span className="device-text">
-                  <span className="device-name">{s.device}</span>
-                  <span className="muted small">
-                    {s.userName} · {s.email} · dernière activité {formatAgo(s.lastSeen)}
+                  <span className="device-name">
+                    {s.device}
+                    {s.online && <span className="c-dot c-dot-sm" aria-label="en ligne" />}
                   </span>
+                  <span className="muted small">
+                    {s.userName} · {s.email} · {s.online ? 'en ligne' : `dernière activité ${formatAgo(s.lastSeen)}`}
+                  </span>
+                  {s.listening && (
+                    <span className="muted small">
+                      Dernier titre lancé : {s.listening.title} — {s.listening.artist} ({formatAgo(s.listening.at)})
+                    </span>
+                  )}
                 </span>
                 <button type="button" className="icon-btn" aria-label={`Déconnecter ${s.device} (${s.userName})`} title="Déconnecter cet appareil" onClick={() => void remove(s)}>
                   <Trash2 />

@@ -12,6 +12,7 @@ import { getMusicDirs, setSetting } from './db';
 import { autostartStatus, openAppWindow, setAutostart } from './desktop';
 import { AUDIO_EXT } from './scanner';
 import type { Ctx } from './routes';
+import { GB, computeStorage, deleteImport, freeSpaceAt, invalidateStorage, listImports, minFreeGb } from './storage';
 import { HttpError, errMsg, mustInt, pathKey } from './util';
 import { VERSION } from './config';
 
@@ -110,7 +111,7 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
            (SELECT COUNT(*) FROM artists) AS artists, (SELECT COALESCE(SUM(duration), 0) FROM tracks) AS duration`,
       )
       .get() as unknown as Omit<ConsoleStats, 'users' | 'devices'>;
-    return { tracks: r.tracks, albums: r.albums, artists: r.artists, duration: r.duration, users: auth.userCount(), devices: auth.sessionCount() };
+    return { tracks: r.tracks, albums: r.albums, artists: r.artists, duration: r.duration, users: auth.userCount(), online: auth.onlineUserCount(), devices: auth.sessionCount() };
   });
 
   app.post('/api/console/open-player', async () => {
@@ -160,6 +161,11 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (declared > MAX_UPLOAD) throw new HttpError(413, 'Fichier trop volumineux (1 Go au maximum).');
 
     await fsp.mkdir(ctx.uploadsDir, { recursive: true });
+    // On garde de la place libre sur le disque : l'importation est refusée si elle la fait passer sous la réserve.
+    const free = await freeSpaceAt(ctx.uploadsDir);
+    if (free !== null && free - declared < minFreeGb(db) * GB) {
+      throw new HttpError(507, `Pas assez d'espace libre sur le disque (réserve de ${minFreeGb(db)} Go). Libère de la place ou change la réserve dans Stockage.`);
+    }
     const trackAt = (file: string) => db.prepare('SELECT id FROM tracks WHERE path = ?').get(file) as { id: number } | undefined;
 
     // Déjà envoyé (même nom, même taille) : on ne le copie pas une seconde fois.
@@ -208,8 +214,32 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
       scanner.start();
       throw new HttpError(415, "Ce fichier n'a pas pu être lu : il est peut-être corrompu.");
     }
+    invalidateStorage();
     reply.code(201);
     return { duplicate: false };
+  });
+
+  // ---- Stockage : espace utilisé et libre, fichiers importés
+  app.get('/api/console/storage', async (req) => {
+    const force = (req.query as { refresh?: string }).refresh === '1';
+    const st = scanner.status;
+    return computeStorage(db, ctx.dataDir, ctx.uploadsDir, ctx.coversDir, force || st.running, st.finishedAt ?? 0);
+  });
+
+  app.put('/api/console/storage/settings', async (req) => {
+    const v = body(req).minFreeGb;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100_000) throw new HttpError(400, 'Indique un nombre de Go entre 0 et 100 000.');
+    setSetting(db, 'import_min_free_gb', Math.round(v * 10) / 10);
+    return computeStorage(db, ctx.dataDir, ctx.uploadsDir, ctx.coversDir, true);
+  });
+
+  app.get('/api/console/storage/imports', async () => listImports(db, ctx.uploadsDir));
+
+  app.delete('/api/console/storage/imports/:name', async (req) => {
+    await deleteImport(ctx.uploadsDir, (req.params as { name: string }).name);
+    scanner.start(); // le titre disparaît de la bibliothèque
+    invalidateStorage();
+    return listImports(db, ctx.uploadsDir);
   });
 
   // ---- Serveur : démarrage avec Windows, mises à jour, arrêt

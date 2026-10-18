@@ -6,6 +6,7 @@ import { api, ApiError } from '../lib/api';
 import { formatTotal } from '../lib/format';
 import { toast } from '../store/ui';
 import { ScanProgress, useConsoleInfo } from './Folders';
+import { Presence } from './Presence';
 import { shutdownServer } from './state';
 
 const n = (v: number) => v.toLocaleString('fr-FR');
@@ -74,6 +75,8 @@ export function Overview() {
         </div>
       )}
 
+      <Presence />
+
       <section className="c-block">
         <h2>Bibliothèque</h2>
         <dl className="stats">
@@ -91,6 +94,10 @@ export function Overview() {
           <Link to="/comptes" className="c-stat-link">
             <dt>Comptes</dt>
             <dd>{stats ? n(stats.users) : '…'}</dd>
+          </Link>
+          <Link to="/appareils" className="c-stat-link">
+            <dt>Connectés maintenant</dt>
+            <dd>{stats ? n(stats.online) : '…'}</dd>
           </Link>
           <Link to="/appareils" className="c-stat-link">
             <dt>Appareils connectés</dt>

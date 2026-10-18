@@ -266,7 +266,7 @@ Deux raccourcis sont crees sur le bureau et dans le menu Demarrer :
   "Spotifree"          LE LECTEUR : il sert uniquement a ECOUTER de la
                              musique (albums, playlists, likes, recherche...).
   "Spotifree Serveur"  LE SERVEUR : il sert uniquement a GERER (comptes,
-                             appareils, dossiers de musique, importation, acces
+                             appareils, dossiers de musique, importation, espace disque, acces
                              depuis le telephone, mises a jour, arret). Il ne
                              lit aucune musique.
 

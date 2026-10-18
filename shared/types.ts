@@ -183,6 +183,10 @@ export interface ConsoleSession {
   device: string;
   createdAt: number;
   lastSeen: number;
+  /** Actif ces dernières minutes (lecteur ouvert). */
+  online: boolean;
+  /** Dernier titre lancé depuis cet appareil (ne dit pas qu'il est encore en cours). */
+  listening: { title: string; artist: string; at: number } | null;
 }
 
 export interface RemoteAddress {
@@ -216,7 +220,63 @@ export interface ConsoleStats {
   artists: number;
   duration: number;
   users: number;
+  /** Comptes actifs en ce moment. */
+  online: number;
   devices: number;
+}
+
+/** Un disque (ou volume) qui héberge de la musique ou les données de Spotifree. */
+export interface StorageDisk {
+  id: string;
+  /** « C:\\ » sous Windows. */
+  label: string;
+  total: number;
+  free: number;
+}
+
+export interface StorageFolder {
+  path: string;
+  /** « music » : dossier suivi ; « imports » : dossier des fichiers importés dans Spotifree. */
+  kind: 'music' | 'imports';
+  exists: boolean;
+  tracks: number;
+  bytes: number;
+  diskId: string | null;
+}
+
+export interface StorageFormat {
+  format: string;
+  tracks: number;
+  bytes: number;
+}
+
+export interface StorageAlbum {
+  id: number;
+  title: string;
+  artist: string;
+  tracks: number;
+  bytes: number;
+}
+
+/** Application Serveur > Stockage. */
+export interface ConsoleStorage {
+  disks: StorageDisk[];
+  folders: StorageFolder[];
+  formats: StorageFormat[];
+  biggest: StorageAlbum[];
+  library: { tracks: number; bytes: number };
+  /** Ce que Spotifree garde pour lui : base de données, pochettes, journaux. */
+  app: { dataDir: string; bytes: number; covers: number; database: number; diskId: string | null };
+  /** Espace à laisser libre : les importations sont refusées en dessous (en Go). */
+  minFreeGb: number;
+  at: number;
+}
+
+export interface StorageImport {
+  name: string;
+  bytes: number;
+  modifiedAt: number;
+  inLibrary: boolean;
 }
 
 export interface UpdateStatus {

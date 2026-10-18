@@ -135,8 +135,13 @@ const toUser = (r: UserRow): User => ({
   mustChange: r.must_change === 1,
 });
 
+/** Un appareil est « en ligne » s'il a été actif ces dernières minutes. */
+const ONLINE_MS = 5 * 60_000;
+
 export class Auth {
   private touched = new Map<number, number>();
+  /** Dernier titre lancé par appareil (en mémoire seulement). */
+  private listening = new Map<number, { trackId: number; at: number }>();
 
   constructor(private db: DB) {}
 
@@ -230,9 +235,20 @@ export class Auth {
     return { ...toUser(row), sessionId: row.session_id };
   }
 
+  markListening(sessionId: number, trackId: number): void {
+    this.listening.set(sessionId, { trackId, at: Date.now() });
+  }
+
+  /** Personnes actives en ce moment (au moins un appareil actif ces dernières minutes). */
+  onlineUserCount(): number {
+    const since = Date.now() - ONLINE_MS;
+    return (this.db.prepare('SELECT COUNT(DISTINCT user_id) AS n FROM sessions WHERE last_seen > ?').get(since) as { n: number }).n;
+  }
+
   revokeSession(id: number): void {
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
     this.touched.delete(id);
+    this.listening.delete(id);
   }
 
   revokeUserSessions(userId: number, exceptSessionId?: number): void {
@@ -330,7 +346,23 @@ export class Auth {
          FROM sessions s JOIN users u ON u.id = s.user_id ORDER BY s.last_seen DESC`,
       )
       .all() as unknown as { id: number; user_id: number; name: string; email: string; device: string; created_at: number; last_seen: number }[];
-    return rows.map((r) => ({ id: r.id, userId: r.user_id, userName: r.name, email: r.email, device: r.device, createdAt: r.created_at, lastSeen: r.last_seen }));
+    const now = Date.now();
+    const track = this.db.prepare('SELECT title, artist FROM tracks WHERE id = ?');
+    return rows.map((r) => {
+      const l = this.listening.get(r.id);
+      const t = l ? (track.get(l.trackId) as { title: string; artist: string } | undefined) : undefined;
+      return {
+        id: r.id,
+        userId: r.user_id,
+        userName: r.name,
+        email: r.email,
+        device: r.device,
+        createdAt: r.created_at,
+        lastSeen: r.last_seen,
+        online: now - r.last_seen < ONLINE_MS,
+        listening: l && t && now - l.at < 60 * 60_000 ? { title: t.title, artist: t.artist, at: l.at } : null,
+      };
+    });
   }
 
   listSessions(userId: number, currentId: number) {

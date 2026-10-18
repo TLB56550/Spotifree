@@ -62,3 +62,13 @@ export function formatAgo(timestamp: number, now = Date.now()): string {
   if (h < 24) return `il y a ${h} h`;
   return `il y a ${Math.round(h / 24)} j`;
 }
+
+/** 1,4 Go · 320 Mo · 12 Ko (unités binaires, comme l'Explorateur Windows). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 o';
+  const units = ['o', 'Ko', 'Mo', 'Go', 'To'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const v = bytes / 1024 ** i;
+  const text = v >= 100 || i === 0 ? Math.round(v).toString() : v.toLocaleString('fr-FR', { maximumFractionDigits: 1, minimumFractionDigits: v < 10 && i > 0 ? 1 : 0 });
+  return `${text} ${units[i]}`;
+}

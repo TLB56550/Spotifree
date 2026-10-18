@@ -293,6 +293,7 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     const id = mustInt((req.params as { id: string }).id);
     const file = q.trackFile(db, id);
     if (!file) throw new HttpError(404, 'Titre introuvable');
+    if (req.mbUser) ctx.auth.markListening(req.mbUser.sessionId, id);
     let stat: fs.Stats;
     try {
       stat = await fsp.stat(file);

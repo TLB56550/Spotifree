@@ -559,6 +559,11 @@ try {
     ['DELETE', '/api/admin/users/1', undefined],
     ['GET', '/api/console/info', undefined],
     ['GET', '/api/console/users', undefined],
+    ['GET', '/api/console/sessions', undefined],
+    ['GET', '/api/console/storage', undefined],
+    ['PUT', '/api/console/storage/settings', { minFreeGb: 0 }],
+    ['GET', '/api/console/storage/imports', undefined],
+    ['DELETE', '/api/console/storage/imports/x.mp3', undefined],
     ['POST', '/api/console/shutdown', undefined],
   ];
   for (const cookie of [alice, adminCk]) {
@@ -666,6 +671,37 @@ try {
   assert.ok(!fs.existsSync(path.join(uploadsDir, 'x.mp3')));
   ok('Envoi refusé sans en-tête x-mb ; le lecteur (même connecté) n\'accepte aucun fichier');
 
+  console.log('Stockage (application Serveur)');
+  r = await cget('/api/console/storage');
+  assert.equal(r.status, 200, r.text);
+  let storage = r.json;
+  assert.equal(storage.library.tracks, 6);
+  assert.ok(storage.library.bytes > 100_000);
+  const impFolder = storage.folders.find((f) => f.kind === 'imports');
+  assert.equal(impFolder.path, uploadsDir);
+  assert.equal(impFolder.tracks, 2, 'les deux fichiers importés sont comptés à part');
+  const musicFolder = storage.folders.find((f) => f.kind === 'music');
+  assert.equal(musicFolder.tracks, 4);
+  assert.equal(impFolder.bytes + musicFolder.bytes, storage.library.bytes);
+  assert.equal(storage.formats.reduce((n, f) => n + f.tracks, 0), 6);
+  assert.ok(storage.formats.every((f) => f.format === f.format.toUpperCase()));
+  assert.ok(storage.biggest.length >= 1 && storage.biggest[0].bytes >= storage.biggest.at(-1).bytes);
+  assert.ok(storage.app.database > 0 && storage.app.bytes > 0 && storage.app.covers >= 0);
+  assert.ok(storage.disks.length >= 1 && storage.disks.every((d) => d.total > d.free && d.free >= 0));
+  assert.ok(storage.folders.every((f) => storage.disks.some((d) => d.id === f.diskId)));
+  assert.equal(storage.minFreeGb, 1);
+  ok('Stockage : disques (libre / total), dossiers, formats, albums les plus volumineux, données de l\'application');
+
+  r = await ccall('PUT', '/api/console/storage/settings', { minFreeGb: -3 });
+  assert.equal(r.status, 400);
+  r = await ccall('PUT', '/api/console/storage/settings', { minFreeGb: 100_000 });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.minFreeGb, 100_000);
+  assert.equal((await upload('trop-gros.mp3', sample)).status, 507, 'importation refusée sous la réserve d\'espace libre');
+  assert.ok(!fs.existsSync(path.join(uploadsDir, 'trop-gros.mp3')));
+  assert.equal((await ccall('PUT', '/api/console/storage/settings', { minFreeGb: 1 })).json.minFreeGb, 1);
+  ok('Réserve d\'espace libre : importation refusée en dessous, réglage validé');
+
   console.log('Gestion des comptes (application Serveur)');
   r = await cget('/api/console/users');
   assert.equal(r.json.users.length, 2);
@@ -684,7 +720,11 @@ try {
   assert.ok(r.json.length >= 3);
   assert.ok(r.json.some((x) => x.email === 'alice@example.com' && x.device === 'Pixel 7'));
   const aliceSession = r.json.find((x) => x.email === 'alice@example.com');
-  ok('Appareils : tous les appareils connectés, tous comptes confondus');
+  assert.ok(r.json.every((x) => x.online === true), 'tous viennent d\'être actifs');
+  assert.ok(r.json.some((x) => x.email === 'alice@example.com' && x.listening && x.listening.title && x.listening.at > 0), 'dernier titre lancé par Alice');
+  assert.equal(r.json.find((x) => x.email === 'admin@example.com' && x.listening)?.listening?.title === undefined, false, 'et par le premier compte');
+  assert.equal((await cget('/api/console/stats')).json.online, 2, 'deux personnes connectées en ce moment');
+  ok('Appareils : tous les appareils connectés, tous comptes confondus, en ligne, dernier titre lancé');
 
   // Retrait d'un appareil depuis le serveur
   assert.equal((await ccall('DELETE', `/api/console/sessions/${aliceSession.id}`)).status, 200);
@@ -696,6 +736,21 @@ try {
     alice = cookieOf(r);
   }
   ok('Un appareil retiré depuis l\'application Serveur est déconnecté, l\'autre reste connecté');
+
+  // Gestion des fichiers importés
+  assert.equal((await cget('/api/console/storage/imports')).json.length, 2);
+  assert.equal((await ccall('DELETE', '/api/console/storage/imports/..%2Fserver.token')).status, 400);
+  assert.equal((await ccall('DELETE', '/api/console/storage/imports/nexiste-pas.mp3')).status, 404);
+  assert.ok(fs.existsSync(path.join(dataDir, 'server.token')), 'rien n\'est supprimé hors du dossier des importations');
+  r = await ccall('DELETE', `/api/console/storage/imports/${encodeURIComponent('evil name.mp3')}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json.map((f) => f.name), ['Mon envoi.mp3']);
+  assert.ok(!fs.existsSync(path.join(uploadsDir, 'evil name.mp3')));
+  await sleep(300);
+  await waitScan();
+  assert.equal((await cget('/api/console/stats')).json.tracks, 5, 'le titre supprimé quitte la bibliothèque');
+  assert.equal((await cget('/api/console/storage?refresh=1')).json.library.tracks, 5);
+  ok('Fichier importé supprimé : retiré du disque et de la bibliothèque, aucune sortie du dossier des importations');
 
   // Inscriptions fermées
   r = await ccall('PUT', '/api/console/signup', { open: false });

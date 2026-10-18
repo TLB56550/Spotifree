@@ -1,5 +1,5 @@
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, Music2, ServerCog, Smartphone, Users } from 'lucide-react';
+import { HardDrive, LayoutDashboard, Music2, ServerCog, Smartphone, Users } from 'lucide-react';
 import { ModalHost, ToastHost } from '../components/Modals';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { UpdateGate } from '../components/UpdateGate';
@@ -10,6 +10,7 @@ import { MusicPage } from './MusicPage';
 import { Overview } from './Overview';
 import { RemoteAccess } from './RemoteAccess';
 import { ServerSection } from './ServerSection';
+import { StoragePage } from './StoragePage';
 import { DropHint, UploadPill } from './Uploads';
 import { shutdownServer, useServerState } from './state';
 
@@ -22,6 +23,7 @@ const NAV = [
   { to: '/comptes', label: 'Comptes', icon: Users, end: false },
   { to: '/appareils', label: 'Appareils', icon: Smartphone, end: false },
   { to: '/musique', label: 'Musique', icon: Music2, end: false },
+  { to: '/stockage', label: 'Stockage', icon: HardDrive, end: false },
   { to: '/serveur', label: 'Serveur', icon: ServerCog, end: false },
 ];
 
@@ -100,6 +102,7 @@ export default function ConsoleApp() {
             }
           />
           <Route path="/musique" element={<MusicPage />} />
+          <Route path="/stockage" element={<StoragePage />} />
           <Route
             path="/serveur"
             element={
