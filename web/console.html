@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#07080a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Serveur" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Ma Bibliothèque – Serveur</title>
+    <script>
+      // Réapplique le thème choisi avant le premier affichage, pour éviter un éclair sombre en mode clair.
+      try {
+        var t = JSON.parse(localStorage.getItem('mb.theme.vars') || 'null');
+        if (t && t.vars) {
+          var r = document.documentElement;
+          for (var k in t.vars) r.style.setProperty(k, t.vars[k]);
+          r.style.colorScheme = t.mode;
+          r.style.background = t.vars['--bg'];
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute('content', t.vars['--bg']);
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/console/main.tsx"></script>
+  </body>
+</html>

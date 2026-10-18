@@ -1,17 +1,14 @@
 import { NavLink, useMatch, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Disc3, Heart, Home, ListMusic, Mic2, Music2, Plus, Search, ServerCog, Settings, Volume2 } from 'lucide-react';
+import { Disc3, Heart, Home, ListMusic, Mic2, Music2, Plus, Search, Settings, Volume2 } from 'lucide-react';
 import type { Playlist } from '@shared/types';
 import { api } from '../lib/api';
 import { countTracks } from '../lib/format';
 import { playlistSource } from '../lib/actions';
-import { useIsAdmin } from '../lib/auth';
 import { usePlayer } from '../store/player';
 import { useUI } from '../store/ui';
 import { openAt, useMenus } from '../hooks/useMenus';
 import { PlaylistCover } from './Cover';
-
-import { UploadPicker } from './Uploads';
 
 export function LibraryRow({
   to,
@@ -67,7 +64,6 @@ export function Sidebar() {
   const { data: playlists } = useQuery({ queryKey: ['playlists'], queryFn: () => api.get<Playlist[]>('/api/playlists') });
   const { data: likedIds } = useQuery({ queryKey: ['favorites', 'ids'], queryFn: () => api.get<number[]>('/api/favorites/ids') });
   const openDialog = useUI((s) => s.openPlaylistDialog);
-  const admin = useIsAdmin();
 
   const navItem = (to: string, icon: React.ReactNode, label: string, end = false) => (
     <NavLink to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
@@ -131,13 +127,6 @@ export function Sidebar() {
           )}
         </div>
         <footer className="lib-foot">
-          {admin && <UploadPicker variant="nav" />}
-          {admin && (
-            <NavLink to="/admin" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
-              <ServerCog />
-              <span>Administration</span>
-            </NavLink>
-          )}
           <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
             <Settings />
             <span>Paramètres</span>

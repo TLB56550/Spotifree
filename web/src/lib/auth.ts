@@ -18,10 +18,6 @@ export function useUser(): User | null {
   return useAuth().data?.user ?? null;
 }
 
-export function useIsAdmin(): boolean {
-  return useUser()?.isAdmin === true;
-}
-
 const PERSONAL_KEYS = ['mb.player.queue', 'mb.player.time'];
 
 /** Repart de zéro après une connexion ou une déconnexion : file d'attente, likes et cache de l'ancienne personne disparaissent. */

@@ -6,7 +6,6 @@ import { api } from './lib/api';
 import { invalidateLibrary, queryClient } from './lib/queryClient';
 import { ScrollContext } from './hooks/scroll';
 import { useShortcuts } from './hooks/useShortcuts';
-import { useIsAdmin } from './lib/auth';
 import { useIsMobile } from './hooks/useMobile';
 import { initSound } from './lib/sound';
 import { useLikes } from './store/likes';
@@ -23,7 +22,6 @@ import { ConnectionBanner } from './components/ConnectionBanner';
 import { SoundPanelHost } from './components/SoundPanel';
 import { AuthGate } from './components/AuthPage';
 import { UpdateGate } from './components/UpdateGate';
-import { UploadBanner, UploadFloat } from './components/Uploads';
 import { MiniPlayer, NowPlaying, TabBar } from './components/Mobile';
 import HomePage from './pages/Home';
 import SearchPage from './pages/Search';
@@ -31,7 +29,6 @@ import AlbumPage from './pages/Album';
 import ArtistPage from './pages/Artist';
 import PlaylistPage from './pages/Playlist';
 import SettingsPage from './pages/Settings';
-import AdminPage from './pages/Admin';
 import { AlbumsPage, ArtistsPage, GenrePage, LibraryPage, LikedPage, SongsPage } from './pages/Library';
 
 /** Recharge les pages pendant une analyse, puis une dernière fois quand elle se termine. */
@@ -74,7 +71,6 @@ const routes = (
     <Route path="/liked" element={<LikedPage />} />
     <Route path="/genre/:name" element={<GenrePage />} />
     <Route path="/settings" element={<SettingsPage />} />
-    <Route path="/admin" element={<AdminPage />} />
     <Route
       path="*"
       element={
@@ -96,7 +92,6 @@ export default function App() {
 
 function Shell() {
   const mainRef = useRef<HTMLElement>(null);
-  const admin = useIsAdmin();
   const location = useLocation();
   const queueOpen = useUI((s) => s.queueOpen);
   const mobile = useIsMobile();
@@ -130,7 +125,6 @@ function Shell() {
           </main>
           <div className="m-dock">
             <ConnectionBanner />
-            {admin && <UploadBanner />}
             <MiniPlayer />
             <TabBar />
           </div>
@@ -149,7 +143,6 @@ function Shell() {
           </main>
           {queueOpen && <QueuePanel />}
           <PlayerBar />
-          {admin && <UploadFloat />}
           <ContextMenuHost />
           <ModalHost />
           <SoundPanelHost />

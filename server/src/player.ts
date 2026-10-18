@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { PORT, resolveDataDir } from './config';
+import { CONSOLE_PORT, PORT, resolveDataDir } from './config';
 import { openAppWindow } from './desktop';
 
 const DEFAULT_SERVER = `http://127.0.0.1:${PORT}`;
@@ -50,6 +50,13 @@ function startServerInBackground(): void {
   child.unref();
 }
 
+/** Attend que le serveur de ce PC réponde à cette adresse, en le démarrant en arrière-plan s'il ne tourne pas. */
+async function ensureLocalServer(url: string): Promise<void> {
+  if (await healthy(url)) return;
+  startServerInBackground();
+  for (let i = 0; i < 80 && !(await healthy(url)); i++) await sleep(500);
+}
+
 /**
  * Le lecteur : ouvre la fenêtre de l'application sur le serveur choisi (ce PC par défaut) et s'arrête.
  * Fermer la fenêtre n'arrête rien ; si le serveur de ce PC n'est pas lancé, il est d'abord démarré en arrière-plan.
@@ -68,12 +75,21 @@ export async function runPlayer(args: string[]): Promise<number> {
   }
 
   const url = readServer();
-  if (isThisPc(url) && !(await healthy(url))) {
-    startServerInBackground();
-    for (let i = 0; i < 80 && !(await healthy(url)); i++) await sleep(500);
-  }
+  if (isThisPc(url)) await ensureLocalServer(url);
   await openAppWindow(url);
   // Laisse à Windows le temps de présenter la fenêtre avant que ce processus ne disparaisse.
+  await sleep(1500);
+  return 0;
+}
+
+/**
+ * L'application « Serveur » : ouvre la console de gestion du serveur de ce PC (comptes, appareils, musique…).
+ * Elle ne lit aucune musique. Le serveur est démarré en arrière-plan s'il ne tourne pas.
+ */
+export async function runConsoleApp(): Promise<number> {
+  const playerUrl = DEFAULT_SERVER;
+  await ensureLocalServer(playerUrl);
+  await openAppWindow(`http://127.0.0.1:${CONSOLE_PORT}`);
   await sleep(1500);
   return 0;
 }

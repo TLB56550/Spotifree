@@ -186,15 +186,21 @@ function migrate(db: DB): void {
   }
 }
 
-/** Rattache les playlists, favoris et écoutes d'avant les comptes au premier administrateur (à appeler dans une transaction). */
+/**
+ * Rattache les playlists, favoris et écoutes d'avant les comptes à une personne (à appeler dans une transaction).
+ * L'ancien compteur d'écoutes global n'est repris qu'une seule fois.
+ */
 export function adoptLegacyData(db: DB, userId: number): void {
   db.prepare('UPDATE playlists SET user_id = ? WHERE user_id IS NULL').run(userId);
   db.prepare('UPDATE favorites SET user_id = ? WHERE user_id IS NULL').run(userId);
   db.prepare('UPDATE plays SET user_id = ? WHERE user_id IS NULL').run(userId);
-  db.prepare(
-    `INSERT OR IGNORE INTO user_tracks (user_id, track_id, play_count, last_played)
-     SELECT ?, id, play_count, last_played FROM tracks WHERE play_count > 0`,
-  ).run(userId);
+  if (!getSetting<boolean>(db, 'legacy_counts_adopted', false)) {
+    db.prepare(
+      `INSERT OR IGNORE INTO user_tracks (user_id, track_id, play_count, last_played)
+       SELECT ?, id, play_count, last_played FROM tracks WHERE play_count > 0`,
+    ).run(userId);
+    setSetting(db, 'legacy_counts_adopted', true);
+  }
 }
 
 /** Exécute `fn` dans une transaction (pas d'`await` à l'intérieur). */

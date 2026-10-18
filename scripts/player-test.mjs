@@ -1,5 +1,6 @@
-// Test de la séparation serveur / lecteur : node scripts/player-test.mjs  (après « npm run build »)
-// Le lecteur (« server.mjs player ») démarre le serveur en arrière-plan, qui survit à tout, sauf à « Arrêter le serveur ».
+// Test des deux applications Windows : node scripts/player-test.mjs  (après « npm run build »)
+// Le lecteur (« server.mjs player ») et l'application Serveur (« server.mjs console ») démarrent le serveur en arrière-plan,
+// qui survit à tout, sauf à « Arrêter le serveur » (depuis l'application Serveur).
 import { execFileSync, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -12,6 +13,7 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-player-'));
 const PORT = 4450;
 const base = `http://127.0.0.1:${PORT}`;
+const cbase = `http://127.0.0.1:${PORT + 2}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
 const ok = (m) => console.log(`  ✓ ${m}${++passed ? '' : ''}`);
@@ -25,6 +27,7 @@ function install(name, { launchers = false } = {}) {
   if (launchers) {
     fs.mkdirSync(path.join(dir, 'app', 'launchers'));
     fs.writeFileSync(path.join(dir, 'app', 'launchers', 'Ma Bibliotheque.vbs'), "' lanceur\r\n");
+    fs.writeFileSync(path.join(dir, 'app', 'launchers', 'Ma Bibliotheque Serveur.vbs'), "' lanceur serveur\r\n");
   }
   return dir;
 }
@@ -33,14 +36,14 @@ const env = (dir, extra = {}) => ({
   DATA_DIR: path.join(tmp, 'data-' + path.basename(dir)),
   PORT: String(PORT),
   UPDATE_DISABLED: '1',
-  MB_ADMIN_EMAIL: 'admin@example.com',
-  MB_ADMIN_PASSWORD: 'motdepasse-test',
   MB_PLAYER_DRY: '1',
   MB_STARTUP_DIR: path.join(tmp, 'startup-' + path.basename(dir)),
   ...extra,
 });
-const player = (dir, args = [], extra = {}) =>
-  spawnSync('node', ['--no-warnings', path.join(dir, 'app', 'server.mjs'), 'player', ...args], { env: env(dir, extra), encoding: 'utf8', timeout: 60000 });
+const app = (mode) => (dir, args = [], extra = {}) =>
+  spawnSync('node', ['--no-warnings', path.join(dir, 'app', 'server.mjs'), mode, ...args], { env: env(dir, extra), encoding: 'utf8', timeout: 60000 });
+const player = app('player');
+const consoleApp = app('console');
 const health = async () => {
   try {
     return await (await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1000) })).json();
@@ -57,18 +60,11 @@ const localToken = () => {
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
   return files.length ? fs.readFileSync(files[0], 'utf8').trim() : '';
 };
-async function login() {
-  const r = await fetch(base + '/api/auth/login', {
-    method: 'POST',
-    headers: { 'x-mb': '1', 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@example.com', password: 'motdepasse-test' }),
-  });
-  return /mb_session=[^;]+/.exec(r.headers.get('set-cookie') ?? '')?.[0] ?? '';
-}
+// Appels à l'application Serveur (console) : pas de compte, c'est le PC qui fait foi.
 const call = async (method, url, body) =>
-  fetch(base + url, {
+  fetch(cbase + url.replace('/api/', '/api/console/'), {
     method,
-    headers: { 'x-mb': '1', 'x-mb-token': localToken(), cookie: await login(), ...(body ? { 'content-type': 'application/json' } : {}) },
+    headers: { 'x-mb': '1', ...(body ? { 'content-type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
 async function until(fn, ms = 20000) {
@@ -107,6 +103,19 @@ try {
   assert.equal(before.length, 1);
   ok('Lecteur rouvert : le serveur déjà en marche est réutilisé');
 
+  // 2b. L'application Serveur : même serveur, autre fenêtre (port de la console)
+  r = consoleApp(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`OPEN ${cbase}$`, 'm'));
+  assert.doesNotMatch(r.stdout, new RegExp(`OPEN ${base}`), 'l\'application Serveur n\'ouvre pas le lecteur');
+  assert.deepEqual(pids(path.join(dir, 'app', 'server.mjs') + ' serve'), before, 'le serveur déjà en marche est réutilisé');
+  assert.equal((await fetch(`${cbase}/api/health`)).status, 200);
+  const consolePage = await (await fetch(cbase + '/')).text();
+  const playerPage = await (await fetch(base + '/')).text();
+  assert.match(consolePage, /Serveur/);
+  assert.notEqual(consolePage, playerPage, 'deux pages différentes');
+  ok('Application Serveur : ouvre la console de ce PC (pas le lecteur), réutilise le serveur en marche');
+
   // 3. Le serveur survit à un plantage (relancé par le superviseur)
   process.kill(before[0], 'SIGKILL');
   await until(async () => (await health())?.app === 'ma-bibliotheque' && pids(path.join(dir, 'app', 'server.mjs') + ' serve')[0] !== before[0]);
@@ -132,7 +141,17 @@ try {
   await sleep(3500);
   assert.equal(await health(), null, 'pas de relance après un arrêt demandé');
   assert.deepEqual(pids(path.join(dir, 'app', 'server.mjs') + ' run'), []);
-  ok('Arrêter le serveur : arrêt complet, aucun processus restant');
+  ok('Arrêter le serveur (application Serveur) : arrêt complet, aucun processus restant');
+
+  // 5b. Sans serveur, l'application Serveur le démarre elle-même
+  r = consoleApp(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`OPEN ${cbase}$`, 'm'));
+  assert.equal((await health())?.app, 'ma-bibliotheque');
+  assert.equal((await call('GET', '/api/info')).status, 200);
+  assert.equal((await call('POST', '/api/shutdown')).status, 200);
+  await until(async () => (await health()) === null);
+  ok('Application Serveur lancée sans serveur : il est démarré en arrière-plan');
 
   // 6. Le lecteur sait pointer vers un autre serveur (NAS)
   r = player(dir, ['--set-server', 'http://192.168.1.20:4242/']);
@@ -149,10 +168,12 @@ try {
   dir = install('b', { launchers: true });
   r = player(dir);
   await until(async () => fs.existsSync(path.join(dir, 'Ma Bibliotheque.vbs')));
+  await until(async () => fs.existsSync(path.join(dir, 'Ma Bibliotheque Serveur.vbs')));
   assert.equal(fs.readFileSync(path.join(dir, 'Ma Bibliotheque.vbs'), 'utf8'), "' lanceur\r\n");
+  assert.equal(fs.readFileSync(path.join(dir, 'Ma Bibliotheque Serveur.vbs'), 'utf8'), "' lanceur serveur\r\n");
   await call('POST', '/api/shutdown');
   await until(async () => (await health()) === null);
-  ok('Lanceurs de la mise à jour : copiés dans le dossier d\'installation');
+  ok('Lanceurs de la mise à jour (lecteur et serveur) : copiés dans le dossier d\'installation');
 
   // 8. Mise à jour automatique sous superviseur : redémarrage sur la nouvelle version, sans fenêtre
   const pkg = path.join(tmp, 'pkg', 'app');

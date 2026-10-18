@@ -1,22 +1,18 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Settings } from '../../shared/types';
-import { VERSION, defaultMusicDir, isLoopbackHost, isWin } from './config';
-import { getMusicDirs, setSetting, type DB } from './db';
+import type { AppInfo } from '../../shared/types';
+import { VERSION, isLoopbackHost } from './config';
+import type { DB } from './db';
 import * as q from './queries';
-import { autostartStatus, setAutostart } from './desktop';
 import { type Auth, type AuthUser } from './auth';
 import { registerAuthRoutes } from './authRoutes';
+import { registerConsoleRoutes } from './consoleRoutes';
 import { isLocalRequest, type RemoteAccess } from './remote';
 import type { Scanner } from './scanner';
 import type { Updater } from './update';
-import { HttpError, errMsg, mustInt, pathKey, toInt } from './util';
-import { AUDIO_EXT } from './scanner';
-import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { HttpError, errMsg, mustInt, toInt } from './util';
 
 export interface Ctx {
   db: DB;
@@ -27,7 +23,11 @@ export interface Ctx {
   updater: Updater;
   publicDir: string | null;
   host: string;
+  /** Port du lecteur (ce PC) ; le port de la console est à part. */
   port: number;
+  consolePort: number;
+  /** Adresse du lecteur sur ce PC. */
+  playerUrl: string;
   remote: RemoteAccess;
   auth: Auth;
   /** Jeton écrit dans le dossier des données : permet à l'installateur de fermer le serveur sans compte. */
@@ -36,8 +36,10 @@ export interface Ctx {
 
 declare module 'fastify' {
   interface FastifyRequest {
-    /** Vrai si la requête vient du PC lui-même. */
+    /** Vrai si la requête vient du PC lui-même (lecteur ouvert sur le PC du serveur). */
     mbLocal: boolean;
+    /** Vrai pour une requête arrivée sur le port de la console (application Serveur). */
+    mbConsole: boolean;
     /** Personne connectée qui fait la requête, s'il y en a une. */
     mbUser: AuthUser | null;
     /** Vrai pour une demande venue du PC avec le jeton local (installateur). */
@@ -86,78 +88,21 @@ function intList(v: unknown, what: string): number[] {
   return out as number[];
 }
 
-const MAX_UPLOAD = 1024 * 1024 * 1024; // 1 Go par fichier
-const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
-
-/** Nom de fichier sûr (sans chemin, sans caractères interdits sous Windows) ; null si l'extension n'est pas de l'audio. */
-function safeUploadName(raw: string): { base: string; ext: string } | null {
-  const leaf = raw.split(/[\\/]/).pop() ?? '';
-  const ext = path.extname(leaf).toLowerCase();
-  if (!AUDIO_EXT.has(ext)) return null;
-  let base = leaf
-    .slice(0, leaf.length - ext.length)
-    .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[. ]+$/, '')
-    .slice(0, 120)
-    .trim();
-  if (!base) base = 'audio';
-  if (RESERVED_NAMES.test(base)) base = `_${base}`;
-  return { base, ext };
-}
-
-/** Taille d'un fichier ou null s'il n'existe pas. */
-async function sizeOf(file: string): Promise<number | null> {
-  try {
-    return (await fsp.stat(file)).size;
-  } catch {
-    return null;
-  }
-}
-
-function pickFolder(): Promise<string | null> {
-  const script = [
-    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
-    'Add-Type -AssemblyName System.Windows.Forms',
-    '$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }',
-    '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
-    "$d.Description = 'Choisis le dossier qui contient ta musique'",
-    '$d.ShowNewFolderButton = $false',
-    "if ($d.ShowDialog($owner) -eq 'OK') { Write-Output $d.SelectedPath }",
-  ].join('; ');
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script],
-      { timeout: 5 * 60_000, encoding: 'utf8' },
-      (err, stdout) => {
-        if (err) return reject(new HttpError(500, "Impossible d'ouvrir la fenêtre de choix du dossier."));
-        const p = stdout.trim();
-        resolve(p || null);
-      },
-    );
-  });
-}
-
 export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   const { db, scanner } = ctx;
   const loopback = isLoopbackHost(ctx.host);
 
   // ---- Protection
-  // 1. Toute requête vers les données doit venir d'une personne connectée (cookie de session).
-  // 2. Aucune requête qui modifie quelque chose ne passe sans l'en-tête x-mb et une origine cohérente.
-  // 3. « Local » = le PC du serveur : il sert seulement à créer le premier compte et à ouvrir les fenêtres de choix de dossier.
+  // Deux « surfaces » partagent ce programme :
+  //  - le LECTEUR (ports 4242 et 4243) : bibliothèque, lecture, compte personnel. Aucune route d'administration n'y existe ;
+  //  - la CONSOLE (port 4244, ce PC uniquement) : l'application Serveur. Pas de compte : c'est le PC qui fait foi.
+  // Sur le lecteur : toute requête vers les données vient d'une personne connectée (cookie de session).
+  // Sur les deux : aucune requête qui modifie quelque chose ne passe sans l'en-tête x-mb et une origine cohérente.
   app.decorateRequest('mbLocal', false);
+  app.decorateRequest('mbConsole', false);
   app.decorateRequest('mbUser', null);
   app.decorateRequest('mbSystem', false);
 
-  const requireAdmin = (req: FastifyRequest) => {
-    if (!req.mbUser?.isAdmin) throw new HttpError(403, 'Cette action est réservée à l’administrateur.');
-  };
-  const requireLocal = (req: FastifyRequest) => {
-    if (!req.mbLocal) throw new HttpError(403, 'Cette action est réservée au PC du serveur.');
-  };
   const userId = (req: FastifyRequest): number => req.mbUser!.id;
 
   // Ce qui reste accessible sans être connecté (aucune donnée de musique).
@@ -165,13 +110,16 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.addHook('onRequest', async (req, reply) => {
     const url = (req.url ?? '/').split('?')[0] ?? '/';
-    const local = isLocalRequest(req.raw, ctx.port);
+    const sock = req.raw.socket;
+    const onConsole = sock.localPort === ctx.consolePort;
+    const local = !onConsole && isLocalRequest(req.raw, ctx.port);
+    req.mbConsole = onConsole;
     req.mbLocal = local;
     req.mbUser = null;
     req.mbSystem = false;
 
-    // Sur le serveur du PC, seule l'adresse « localhost » est admise (protège du « DNS rebinding »).
-    if (!local && req.raw.socket.localPort === ctx.port && loopback) {
+    // Sur le PC, seule l'adresse « localhost » est admise (protège du « DNS rebinding »).
+    if (onConsole ? !isLocalRequest(req.raw, ctx.consolePort) : !local && sock.localPort === ctx.port && loopback) {
       return reply.code(403).send({ error: 'Adresse non autorisée.' });
     }
 
@@ -190,7 +138,18 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
       if (req.headers['x-mb'] !== '1') return reply.code(403).send({ error: 'Requête refusée.' });
     }
 
+    if (onConsole) {
+      // La console n'a que ses propres routes (et l'état de santé).
+      if (url.startsWith('/api/') && url !== '/api/health' && !url.startsWith('/api/console/')) {
+        return reply.code(404).send({ error: 'Page introuvable' });
+      }
+      return;
+    }
+    // Le lecteur ne sait rien de la console, même pour une personne connectée.
+    if (url.startsWith('/api/console/')) return reply.code(404).send({ error: 'Page introuvable' });
+
     req.mbUser = ctx.auth.authenticate(req.headers.cookie);
+    // Arrêt par un installateur lancé sur ce PC (jeton lisible seulement dans le dossier des données de l'utilisateur).
     if (local && url === '/api/shutdown' && req.method === 'POST' && req.headers['x-mb-token'] === ctx.localToken) {
       req.mbSystem = true;
       return;
@@ -213,173 +172,21 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   // ---- Général
   app.get('/api/health', async () => ({ ok: true, app: 'ma-bibliotheque', version: VERSION }));
 
-  registerAuthRoutes(app, ctx, { requireAdmin });
+  registerAuthRoutes(app, ctx);
+  registerConsoleRoutes(app, ctx);
 
-  app.get('/api/settings', async (req): Promise<Settings> => {
-    // Seul l'administrateur connaît l'organisation des dossiers du serveur.
-    const admin = Boolean(req.mbUser?.isAdmin);
-    return {
-      musicDirs: admin ? getMusicDirs(db) : [],
-      defaultMusicDir: admin ? defaultMusicDir() : '',
-      platform: process.platform,
-      dataDir: admin ? ctx.dataDir : '',
-      uploadsDir: admin ? ctx.uploadsDir : '',
-      version: VERSION,
-      canBrowse: isWin && req.mbLocal && admin,
-      local: req.mbLocal,
-    };
-  });
-
-  // ---- Envoi d'un fichier audio depuis le téléphone vers le dossier réservé du PC
-  app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
-
-  app.post('/api/upload', async (req, reply) => {
-    requireAdmin(req);
-    const query = (req.query ?? {}) as { name?: unknown };
-    const parsed = safeUploadName(typeof query.name === 'string' ? query.name : '');
-    if (!parsed) throw new HttpError(415, 'Format non pris en charge (MP3, FLAC, M4A, AAC, OGG, OPUS ou WAV).');
-    const stream = req.body as NodeJS.ReadableStream | undefined;
-    if (!stream || typeof (stream as { pipe?: unknown }).pipe !== 'function') throw new HttpError(400, 'Fichier manquant.');
-    const declared = Number(req.headers['content-length'] ?? 0);
-    if (declared > MAX_UPLOAD) throw new HttpError(413, 'Fichier trop volumineux (1 Go au maximum).');
-
-    await fsp.mkdir(ctx.uploadsDir, { recursive: true });
-    const trackAt = (file: string) =>
-      db.prepare('SELECT id FROM tracks WHERE path = ?').get(file) as { id: number } | undefined;
-
-    // Déjà envoyé (même nom, même taille) : on ne le copie pas une seconde fois.
-    const sameFile = path.join(ctx.uploadsDir, parsed.base + parsed.ext);
-    if (declared > 0 && (await sizeOf(sameFile)) === declared) {
-      const known = trackAt(sameFile);
-      const track = known ? q.tracksByIds(db, userId(req), [known.id])[0] : undefined;
-      if (track) {
-        (stream as NodeJS.ReadableStream & { resume(): void }).resume();
-        return { track, duplicate: true };
-      }
-    }
-
-    let target = sameFile;
-    for (let n = 2; (await sizeOf(target)) !== null; n++) {
-      target = path.join(ctx.uploadsDir, `${parsed.base} (${n})${parsed.ext}`);
-      if (n > 999) throw new HttpError(500, 'Trop de fichiers portent déjà ce nom.');
-    }
-
-    const part = `${target}.part`;
-    let received = 0;
-    const limiter = new Transform({
-      transform(chunk: Buffer, _enc, cb) {
-        received += chunk.length;
-        if (received > MAX_UPLOAD) cb(new HttpError(413, 'Fichier trop volumineux (1 Go au maximum).'));
-        else cb(null, chunk);
-      },
-    });
-    try {
-      await pipeline(stream, limiter, fs.createWriteStream(part, { flags: 'wx' }));
-      if (received === 0) throw new HttpError(400, 'Le fichier est vide.');
-      if (declared > 0 && received !== declared) throw new HttpError(400, 'Envoi incomplet.');
-      await fsp.rename(part, target);
-    } catch (e) {
-      await fsp.rm(part, { force: true }).catch(() => {});
-      if (e instanceof HttpError) throw e;
-      throw new HttpError(500, "L'envoi a échoué : " + errMsg(e));
-    }
-
-    scanner.start();
-    await scanner.whenIdle();
-    let row = trackAt(target);
-    if (!row) {
-      // Windows ne distingue pas les majuscules : on retrouve le titre sans tenir compte de la casse.
-      const all = db.prepare('SELECT id, path FROM tracks WHERE path LIKE ?').all(`%${path.basename(target)}`) as unknown as { id: number; path: string }[];
-      row = all.find((r) => pathKey(r.path) === pathKey(target));
-    }
-    const track = row ? q.tracksByIds(db, userId(req), [row.id])[0] : undefined;
-    if (!track) {
-      await fsp.rm(target, { force: true }).catch(() => {});
-      scanner.start();
-      throw new HttpError(415, "Ce fichier n'a pas pu être lu : il est peut-être corrompu.");
-    }
-    reply.code(201);
-    return { track, duplicate: false };
-  });
-
-  app.put('/api/settings', async (req) => {
-    requireAdmin(req);
-    const body = (req.body ?? {}) as { musicDirs?: unknown };
-    if (!Array.isArray(body.musicDirs)) throw new HttpError(400, 'Liste de dossiers manquante');
-    const dirs: string[] = [];
-    for (const raw of body.musicDirs) {
-      const dir = path.resolve(str(raw, 'Dossier', 1000));
-      let stat: fs.Stats;
-      try {
-        stat = await fsp.stat(dir);
-      } catch {
-        throw new HttpError(400, `Dossier introuvable : ${dir}`);
-      }
-      if (!stat.isDirectory()) throw new HttpError(400, `Ce n'est pas un dossier : ${dir}`);
-      if (!dirs.some((d) => d.toLowerCase() === dir.toLowerCase())) dirs.push(dir);
-    }
-    setSetting(db, 'music_dirs', dirs);
-    scanner.watch();
-    scanner.start();
-    return { musicDirs: dirs };
-  });
-
-  app.post('/api/settings/browse', async (req) => {
-    requireAdmin(req);
-    requireLocal(req);
-    if (!isWin) throw new HttpError(501, "Le choix d'un dossier n'est pas disponible ici.");
-    return { path: await pickFolder() };
-  });
-
-  app.post('/api/scan', async (req) => {
-    requireAdmin(req);
-    const body = (req.body ?? {}) as { full?: boolean };
-    return { started: scanner.start({ full: Boolean(body.full) }) };
-  });
-  app.get('/api/scan', async () => scanner.status);
-  app.get('/api/stats', async (req) => q.getStats(db, userId(req)));
-
-  app.get('/api/update', async () => ctx.updater.status());
-  app.post('/api/update/check', async (req) => {
-    requireAdmin(req);
-    void ctx.updater.check();
-    return ctx.updater.status();
-  });
-
-  app.get('/api/autostart', async (req) => {
-    requireAdmin(req);
-    return autostartStatus();
-  });
-  app.put('/api/autostart', async (req) => {
-    requireAdmin(req);
-    const body = (req.body ?? {}) as { enabled?: unknown };
-    if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Valeur manquante');
-    try {
-      await setAutostart(body.enabled);
-    } catch (e) {
-      throw new HttpError(400, `Impossible de modifier le démarrage automatique : ${errMsg(e)}`);
-    }
-    return autostartStatus();
-  });
-
+  // Arrêt demandé par l'installateur (jeton local) : le lecteur n'a aucun autre moyen d'arrêter le serveur.
   app.post('/api/shutdown', async (req, reply) => {
-    if (!req.mbSystem) requireAdmin(req);
+    if (!req.mbSystem) throw new HttpError(403, 'Cette action se fait depuis l’application Serveur.');
     setTimeout(() => process.exit(0), 300);
     return reply.send({ ok: true });
   });
 
-  // ---- Accès depuis les autres appareils (téléphones…) : réservé à l'administrateur
-  app.get('/api/remote', async (req) => {
-    requireAdmin(req);
-    return ctx.remote.status();
-  });
-  app.put('/api/remote', async (req) => {
-    requireAdmin(req);
-    const body = (req.body ?? {}) as { enabled?: unknown };
-    if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Valeur manquante');
-    await ctx.remote.setEnabled(body.enabled);
-    return ctx.remote.status();
-  });
+  app.get('/api/about', async (req): Promise<AppInfo> => ({ version: VERSION, local: req.mbLocal }));
+  // Avancement de l'analyse et mise à jour : en lecture seule, pour que le lecteur se rafraîchisse tout seul.
+  app.get('/api/scan', async () => scanner.status);
+  app.get('/api/update', async () => ctx.updater.status());
+  app.get('/api/stats', async (req) => q.getStats(db, userId(req)));
 
   // ---- Bibliothèque
   app.get('/api/home', async (req) => q.getHome(db, userId(req)));
@@ -565,10 +372,19 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     } catch {
       stat = null;
     }
+    // Chaque surface a sa propre page d'accueil, et ne voit pas celle de l'autre.
+    const page = req.mbConsole ? 'console.html' : 'index.html';
+    const other = req.mbConsole ? '/index.html' : '/console.html';
+    if (rel === other || (req.mbConsole && (rel === '/sw.js' || rel === '/manifest.webmanifest'))) return reply.code(404).send();
+    if (rel === '/' + page) stat = null;
     if (!stat) {
-      if (path.extname(rel)) return reply.code(404).send();
-      file = path.join(root, 'index.html');
-      stat = await fsp.stat(file);
+      if (path.extname(rel) && rel !== '/' + page) return reply.code(404).send();
+      file = path.join(root, page);
+      try {
+        stat = await fsp.stat(file);
+      } catch {
+        return reply.code(503).header('Content-Type', 'text/plain; charset=utf-8').send("L'interface est introuvable (page « " + page + " » manquante).");
+      }
     }
     const ext = path.extname(file).toLowerCase();
     const immutable = rel.startsWith('/assets/');

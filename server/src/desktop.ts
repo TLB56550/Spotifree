@@ -3,48 +3,56 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { VERSION, isWin } from './config';
+import { isWin } from './config';
 import { errMsg } from './util';
 
+/** Navigateurs installés capables d'ouvrir une fenêtre d'application (Edge d'abord, puis Chrome). */
+function appBrowsers(): string[] {
+  const pf = process.env['ProgramFiles'] ?? 'C:\\Program Files';
+  const pf86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
+  const local = process.env.LOCALAPPDATA;
+  const list = [
+    path.join(pf86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ...(local ? [path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe')] : []),
+  ];
+  return list.filter((f) => fs.existsSync(f));
+}
+
+/** Lance un programme détaché de celui-ci ; vrai s'il a démarré. */
+function launchDetached(command: string, args: string[], hide: boolean): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(command, args, { stdio: 'ignore', windowsHide: hide, detached: true });
+      child.once('error', () => resolve(false));
+      child.once('spawn', () => {
+        child.unref();
+        resolve(true);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 /**
- * Ouvre l'application dans une fenêtre dédiée (Edge ou Chrome), sinon dans le navigateur par défaut.
- * La commande est détachée de ce processus : sous Windows, Node arrête sinon ses enfants (et la fenêtre
- * qu'ils viennent d'ouvrir) dès qu'il se termine, ce qui est le cas du lecteur juste après l'appel.
- * La promesse se résout quand la commande de lancement est terminée.
+ * Ouvre l'application dans une fenêtre dédiée (Edge ou Chrome en mode « application »), sinon dans le navigateur par défaut.
+ * Le navigateur est lancé directement et détaché de ce processus : sous Windows, Node arrête sinon ses enfants
+ * (et la fenêtre qu'ils viennent d'ouvrir) dès qu'il se termine, ce qui est le cas du lecteur juste après l'appel.
  */
-export function openAppWindow(url: string): Promise<void> {
+export async function openAppWindow(url: string): Promise<void> {
   if (process.env.MB_PLAYER_DRY === '1') {
     console.log(`OPEN ${url}`);
-    return Promise.resolve();
+    return;
   }
-  if (!isWin) return Promise.resolve();
-  const attempts: string[][] = [
-    ['/c', 'start', '', 'msedge', `--app=${url}`],
-    ['/c', 'start', '', 'chrome', `--app=${url}`],
-    ['/c', 'start', '', url],
-  ];
-  return new Promise((resolve) => {
-    const tryNext = (i: number) => {
-      const args = attempts[i];
-      if (!args) return resolve();
-      let moved = false;
-      const next = () => {
-        if (moved) return;
-        moved = true;
-        tryNext(i + 1);
-      };
-      try {
-        const child = spawn('cmd', args, { stdio: 'ignore', windowsHide: true, detached: true });
-        child.on('error', next);
-        child.on('exit', (code) => (code === 0 ? resolve() : next()));
-        child.unref();
-      } catch {
-        next();
-      }
-    };
-    tryNext(0);
-    setTimeout(resolve, 15_000).unref();
-  });
+  if (!isWin) return;
+  for (const exe of appBrowsers()) {
+    // La fenêtre du navigateur ne doit pas être masquée (contrairement au programme qui la lance).
+    if (await launchDetached(exe, [`--app=${url}`], false)) return;
+  }
+  await launchDetached('cmd', ['/c', 'start', '', url], true);
 }
 
 /** Dossiers de l'installation Windows (« …/app » et « …/runtime »), ou null quand on tourne depuis les sources. */
@@ -97,9 +105,12 @@ export async function setAutostart(on: boolean): Promise<void> {
 // ---------------------------------------------------------------- lanceurs installés
 
 /**
- * Après une mise à jour automatique, les petits lanceurs (« Ma Bibliotheque.vbs »…) livrés dans « app/launchers »
- * sont copiés à la racine de l'installation, et les raccourcis existants « Ma Bibliotheque » sont pointés dessus (une seule fois).
+ * Après une mise à jour automatique, les petits lanceurs (« Ma Bibliotheque.vbs », « Ma Bibliotheque Serveur.vbs »…)
+ * livrés dans « app/launchers » sont copiés à la racine de l'installation. Une seule fois, les raccourcis « Ma Bibliotheque »
+ * existants (bureau, menu Démarrer) sont pointés sur le lecteur, et un raccourci « Ma Bibliotheque Serveur » est créé à côté.
  */
+const SHORTCUTS_REV = '2';
+
 export async function ensureLaunchers(dataDir: string, log: (m: string) => void): Promise<void> {
   const inst = installedDirs();
   if (!inst) return;
@@ -112,14 +123,21 @@ export async function ensureLaunchers(dataDir: string, log: (m: string) => void)
       const same = fs.existsSync(to) && (await fsp.readFile(to)).equals(from);
       if (!same) await fsp.writeFile(to, from);
     }
-    const marker = path.join(dataDir, 'launchers.done');
-    if (!isWin || fs.existsSync(marker)) return;
+    const marker = path.join(dataDir, 'shortcuts.done');
+    if (!isWin) return;
+    if (fs.existsSync(marker) && (await fsp.readFile(marker, 'utf8')).trim() === SHORTCUTS_REV) return;
     const ps = [
       '$ws = New-Object -ComObject WScript.Shell',
-      "$vbs = Join-Path $env:MB_ROOT 'Ma Bibliotheque.vbs'",
-      "if (Test-Path $vbs) { foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {",
+      "$wsh = Join-Path $env:SystemRoot 'System32\\wscript.exe'",
+      "$vbsPlayer = Join-Path $env:MB_ROOT 'Ma Bibliotheque.vbs'",
+      "$vbsServer = Join-Path $env:MB_ROOT 'Ma Bibliotheque Serveur.vbs'",
+      "$iconServer = Join-Path $env:MB_ROOT 'app\\icone-serveur.ico'",
+      "foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {",
       "$p = Join-Path $d 'Ma Bibliotheque.lnk'",
-      "if (Test-Path $p) { $l = $ws.CreateShortcut($p); $l.TargetPath = Join-Path $env:SystemRoot 'System32\\wscript.exe'; $l.Arguments = ([char]34 + $vbs + [char]34); $l.WorkingDirectory = $env:MB_ROOT; $l.WindowStyle = 1; $l.Save() } } }",
+      'if ((Test-Path $p) -and (Test-Path $vbsPlayer)) {',
+      "$l = $ws.CreateShortcut($p); $l.TargetPath = $wsh; $l.Arguments = ([char]34 + $vbsPlayer + [char]34); $l.WorkingDirectory = $env:MB_ROOT; $l.WindowStyle = 1; $l.Description = 'Ma Bibliotheque - lecteur'; $l.Save()",
+      "if (Test-Path $vbsServer) { $s = $ws.CreateShortcut((Join-Path $d 'Ma Bibliotheque Serveur.lnk')); $s.TargetPath = $wsh; $s.Arguments = ([char]34 + $vbsServer + [char]34); $s.WorkingDirectory = $env:MB_ROOT; $s.WindowStyle = 1; $s.Description = 'Ma Bibliotheque - serveur'; if (Test-Path $iconServer) { $s.IconLocation = $iconServer }; $s.Save() }",
+      '} }',
     ].join('; ');
     await new Promise<void>((resolve, reject) => {
       execFile(
@@ -129,8 +147,8 @@ export async function ensureLaunchers(dataDir: string, log: (m: string) => void)
         (err) => (err ? reject(err) : resolve()),
       );
     });
-    await fsp.writeFile(marker, VERSION);
-    log('Raccourcis « Ma Bibliotheque » mis à jour : ils ouvrent maintenant le lecteur (le serveur tourne en arrière-plan).');
+    await fsp.writeFile(marker, SHORTCUTS_REV);
+    log("Raccourcis mis à jour : « Ma Bibliotheque » ouvre le lecteur, « Ma Bibliotheque Serveur » ouvre l'application Serveur.");
   } catch (e) {
     log(`Lanceurs non mis à jour : ${errMsg(e)}`);
   }

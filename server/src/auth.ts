@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
-import type { AdminUser, User } from '../../shared/types';
+import type { AdminUser, ConsoleSession, User } from '../../shared/types';
 import { adoptLegacyData, getSetting, setSetting, tx, type DB } from './db';
 import { HttpError } from './util';
 
@@ -124,7 +124,6 @@ interface UserRow {
   email: string;
   name: string;
   pass_hash: string;
-  is_admin: number;
   must_change: number;
   disabled: number;
 }
@@ -133,7 +132,6 @@ const toUser = (r: UserRow): User => ({
   id: r.id,
   email: r.email,
   name: r.name,
-  isAdmin: r.is_admin === 1,
   mustChange: r.must_change === 1,
 });
 
@@ -153,26 +151,38 @@ export class Auth {
     setSetting(this.db, 'signup_open', on);
   }
 
-  adminCount(): number {
-    return (this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND disabled = 0').get() as { n: number }).n;
+  /** Playlists et likes d'avant les comptes, qui n'appartiennent encore à personne. */
+  legacyCounts(): { playlists: number; favorites: number } {
+    const n = (sql: string) => (this.db.prepare(sql).get() as { n: number }).n;
+    return {
+      playlists: n('SELECT COUNT(*) AS n FROM playlists WHERE user_id IS NULL'),
+      favorites: n('SELECT COUNT(*) AS n FROM favorites WHERE user_id IS NULL'),
+    };
   }
 
-  /** Crée un compte. Le tout premier compte est toujours administrateur et reprend les données d'avant les comptes. */
-  async createUser(opts: { email: string; name: string; password: string; isAdmin?: boolean; mustChange?: boolean }): Promise<User> {
+  /**
+   * Crée un compte. Avec `adoptLegacy`, il reprend les playlists, likes et écoutes d'avant les comptes
+   * (le premier compte créé depuis le PC du serveur, ou celui qu'on désigne dans l'application Serveur).
+   */
+  async createUser(opts: { email: string; name: string; password: string; mustChange?: boolean; adoptLegacy?: boolean }): Promise<User> {
     const hash = await hashPassword(opts.password);
     return tx(this.db, () => {
       if (this.db.prepare('SELECT 1 AS x FROM users WHERE email = ?').get(opts.email)) {
         throw new HttpError(409, 'Cette adresse e-mail a déjà un compte.');
       }
-      const first = !this.hasUsers();
-      const isAdmin = first || Boolean(opts.isAdmin);
       const res = this.db
-        .prepare('INSERT INTO users (email, name, pass_hash, is_admin, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(opts.email, opts.name, hash, isAdmin ? 1 : 0, opts.mustChange ? 1 : 0, Date.now());
+        .prepare('INSERT INTO users (email, name, pass_hash, must_change, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(opts.email, opts.name, hash, opts.mustChange ? 1 : 0, Date.now());
       const id = Number(res.lastInsertRowid);
-      if (first) adoptLegacyData(this.db, id);
-      return { id, email: opts.email, name: opts.name, isAdmin, mustChange: Boolean(opts.mustChange) };
+      if (opts.adoptLegacy) adoptLegacyData(this.db, id);
+      return { id, email: opts.email, name: opts.name, mustChange: Boolean(opts.mustChange) };
     });
+  }
+
+  /** Rattache les données d'avant les comptes à ce compte. */
+  adoptLegacy(userId: number): void {
+    if (!this.getUser(userId)) throw new HttpError(404, 'Compte introuvable.');
+    tx(this.db, () => adoptLegacyData(this.db, userId));
   }
 
   /** Vérifie l'e-mail et le mot de passe ; renvoie le compte ou null (même réponse dans tous les cas d'échec). */
@@ -251,16 +261,15 @@ export class Auth {
   listUsers(): AdminUser[] {
     const rows = this.db
       .prepare(
-        `SELECT u.id, u.email, u.name, u.is_admin, u.disabled, u.must_change, u.created_at, u.last_seen,
+        `SELECT u.id, u.email, u.name, u.disabled, u.must_change, u.created_at, u.last_seen,
            (SELECT COUNT(*) FROM playlists p WHERE p.user_id = u.id) AS playlists,
            (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS sessions
-         FROM users u ORDER BY u.is_admin DESC, u.created_at`,
+         FROM users u ORDER BY u.created_at`,
       )
       .all() as unknown as {
       id: number;
       email: string;
       name: string;
-      is_admin: number;
       disabled: number;
       must_change: number;
       created_at: number;
@@ -272,7 +281,6 @@ export class Auth {
       id: r.id,
       email: r.email,
       name: r.name,
-      isAdmin: r.is_admin === 1,
       disabled: r.disabled === 1,
       mustChange: r.must_change === 1,
       createdAt: r.created_at,
@@ -292,13 +300,9 @@ export class Auth {
     return row ? { ...toUser(row), disabled: row.disabled === 1 } : undefined;
   }
 
-  updateUser(id: number, patch: { name?: string; isAdmin?: boolean; disabled?: boolean }): void {
-    const target = this.getUser(id);
-    if (!target) throw new HttpError(404, 'Compte introuvable.');
-    const losesAdmin = target.isAdmin && !target.disabled && (patch.isAdmin === false || patch.disabled === true);
-    if (losesAdmin && this.adminCount() <= 1) throw new HttpError(409, 'Il faut au moins un administrateur actif.');
+  updateUser(id: number, patch: { name?: string; disabled?: boolean }): void {
+    if (!this.getUser(id)) throw new HttpError(404, 'Compte introuvable.');
     if (patch.name !== undefined) this.db.prepare('UPDATE users SET name = ? WHERE id = ?').run(patch.name, id);
-    if (patch.isAdmin !== undefined) this.db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(patch.isAdmin ? 1 : 0, id);
     if (patch.disabled !== undefined) {
       this.db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(patch.disabled ? 1 : 0, id);
       if (patch.disabled) this.revokeUserSessions(id);
@@ -306,10 +310,27 @@ export class Auth {
   }
 
   deleteUser(id: number): void {
-    const target = this.getUser(id);
-    if (!target) throw new HttpError(404, 'Compte introuvable.');
-    if (target.isAdmin && !target.disabled && this.adminCount() <= 1) throw new HttpError(409, 'Il faut au moins un administrateur actif.');
+    if (!this.getUser(id)) throw new HttpError(404, 'Compte introuvable.');
     this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  }
+
+  userCount(): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
+  }
+
+  sessionCount(): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n;
+  }
+
+  /** Tous les appareils connectés, quel que soit le compte (application Serveur). */
+  listAllSessions(): ConsoleSession[] {
+    const rows = this.db
+      .prepare(
+        `SELECT s.id, s.user_id, u.name, u.email, s.device, s.created_at, s.last_seen
+         FROM sessions s JOIN users u ON u.id = s.user_id ORDER BY s.last_seen DESC`,
+      )
+      .all() as unknown as { id: number; user_id: number; name: string; email: string; device: string; created_at: number; last_seen: number }[];
+    return rows.map((r) => ({ id: r.id, userId: r.user_id, userName: r.name, email: r.email, device: r.device, createdAt: r.created_at, lastSeen: r.last_seen }));
   }
 
   listSessions(userId: number, currentId: number) {

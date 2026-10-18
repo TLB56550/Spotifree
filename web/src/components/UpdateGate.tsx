@@ -6,11 +6,11 @@ import type { UpdateStatus } from '@shared/types';
 const BUSY = new Set(['downloading', 'installing', 'restarting']);
 
 /** Écran affiché pendant qu'une mise à jour s'installe, puis rechargement de la page sur la nouvelle version. */
-export function UpdateGate() {
+export function UpdateGate({ statusUrl = '/api/update' }: { statusUrl?: string }) {
   const { data } = useQuery({
-    queryKey: ['update'],
+    queryKey: ['update-gate', statusUrl],
     queryFn: async () => {
-      const res = await fetch('/api/update', { headers: { 'x-mb': '1' } });
+      const res = await fetch(statusUrl, { headers: { 'x-mb': '1' } });
       if (!res.ok) throw new Error('update');
       return (await res.json()) as UpdateStatus;
     },

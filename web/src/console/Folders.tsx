@@ -1,19 +1,19 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
-import type { ScanStatus, Settings } from '@shared/types';
+import type { ConsoleInfo, ScanStatus } from '@shared/types';
 import { api, ApiError } from '../lib/api';
 import { queryClient } from '../lib/queryClient';
 import { toast } from '../store/ui';
 
-export const settingsQuery = { queryKey: ['settings'], queryFn: () => api.get<Settings>('/api/settings') } as const;
+export const infoQuery = { queryKey: ['console', 'info'], queryFn: () => api.get<ConsoleInfo>('/api/console/info') } as const;
 
-export function useSettings() {
-  return useQuery(settingsQuery);
+export function useConsoleInfo() {
+  return useQuery(infoQuery);
 }
 
 export function FolderManager() {
-  const { data: settings } = useSettings();
+  const { data: settings } = useConsoleInfo();
   const [path, setPath] = useState('');
   const [busy, setBusy] = useState(false);
   const dirs = settings?.musicDirs ?? [];
@@ -21,9 +21,9 @@ export function FolderManager() {
   const save = async (next: string[]): Promise<boolean> => {
     setBusy(true);
     try {
-      await api.put('/api/settings', { musicDirs: next });
-      await queryClient.invalidateQueries({ queryKey: ['settings'] });
-      await queryClient.invalidateQueries({ queryKey: ['scan'] });
+      await api.put('/api/console/music', { musicDirs: next });
+      await queryClient.invalidateQueries({ queryKey: ['console', 'info'] });
+      await queryClient.invalidateQueries({ queryKey: ['console', 'scan'] });
       return true;
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Impossible d’enregistrer ce dossier.', 'error');
@@ -45,7 +45,7 @@ export function FolderManager() {
   const browse = async () => {
     setBusy(true);
     try {
-      const res = await api.post<{ path: string | null }>('/api/settings/browse');
+      const res = await api.post<{ path: string | null }>('/api/console/browse');
       setBusy(false);
       if (res.path) await add(res.path);
     } catch (e) {

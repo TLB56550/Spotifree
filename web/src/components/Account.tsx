@@ -150,8 +150,7 @@ export function Account() {
     <section className="setting-block" aria-labelledby="account-title">
       <h2 id="account-title">Mon compte</h2>
       <p className="muted">
-        Connecté avec <strong>{user.email}</strong>
-        {user.isAdmin && <em className="badge"> administrateur</em>}. Tes playlists, tes likes et ton historique sont à toi seul ; la musique, elle, est commune.
+        Connecté avec <strong>{user.email}</strong>. Tes playlists, tes likes et ton historique sont à toi seul ; la musique, elle, est commune.
       </p>
       <NameForm />
       <PasswordForm />

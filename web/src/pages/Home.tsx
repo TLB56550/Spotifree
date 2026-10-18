@@ -9,11 +9,10 @@ import { openAt, useMenus } from '../hooks/useMenus';
 import { usePlayer } from '../store/player';
 import { Cover, PlaylistCover } from '../components/Cover';
 import { MediaCard, Shelf } from '../components/Cards';
-import { FolderManager, ScanProgress, useSettings } from '../components/Folders';
 import { PlayButton } from '../components/Controls';
 import { TrackList } from '../components/TrackList';
 import { Skeleton } from '../components/Hero';
-import { useIsAdmin } from '../lib/auth';
+import { useAbout } from '../lib/about';
 import { InstallHint } from '../components/InstallHint';
 
 function QuickTile({ to, cover, title, source }: { to: string; cover: React.ReactNode; title: string; source: Source }) {
@@ -33,41 +32,23 @@ function QuickTile({ to, cover, title, source }: { to: string; cover: React.Reac
 }
 
 function Onboarding() {
-  const { data: settings } = useSettings();
-  const admin = useIsAdmin();
+  const { data: about } = useAbout();
   const { data: scan } = useQuery({
     queryKey: ['scan'],
     queryFn: () => api.get<ScanStatus>('/api/scan'),
     refetchInterval: (q) => (q.state.data?.running ? 1000 : 4000),
   });
-  if (!admin) {
-    return (
-      <div className="onboarding">
-        <h1>La bibliothèque est vide</h1>
-        <p>Aucun titre n’a encore été ajouté. L’administrateur doit d’abord choisir le dossier de musique du serveur : reviens un peu plus tard.</p>
-      </div>
-    );
-  }
-  const hasFolders = (settings?.musicDirs.length ?? 0) > 0;
   return (
     <div className="onboarding">
-      <h1>Bienvenue dans ta bibliothèque</h1>
-      {!hasFolders ? (
-        <>
-          <p>Choisis le dossier où se trouve ta musique. Les fichiers MP3, FLAC, M4A, OGG et WAV sont reconnus, avec leurs pochettes.</p>
-          <FolderManager />
-        </>
-      ) : scan?.running ? (
-        <>
-          <p>Ta musique est en cours d’analyse. Les premiers titres apparaissent dans quelques instants.</p>
-          <ScanProgress status={scan} />
-        </>
+      <h1>La bibliothèque est vide</h1>
+      {scan?.running ? (
+        <p>La musique est en cours d’analyse sur le serveur. Les premiers titres apparaissent dans quelques instants.</p>
+      ) : about?.local ? (
+        <p>
+          Aucun titre n’a encore été ajouté. Ouvre l’application <strong>Ma Bibliothèque Serveur</strong> (raccourci du bureau) : choisis le dossier qui contient ta musique, elle apparaîtra ici.
+        </p>
       ) : (
-        <>
-          <p>Aucun fichier audio n’a été trouvé dans {settings?.musicDirs.length === 1 ? 'ce dossier' : 'ces dossiers'}. Vérifie qu’il contient bien de la musique (MP3, FLAC, M4A, OGG ou WAV).</p>
-          <FolderManager />
-          <ScanProgress status={scan} />
-        </>
+        <p>Aucun titre n’a encore été ajouté. La personne qui gère le serveur doit d’abord choisir le dossier de musique : reviens un peu plus tard.</p>
       )}
     </div>
   );

@@ -9,10 +9,13 @@ import assert from 'node:assert/strict';
 const libDir = process.argv[2];
 if (!libDir) throw new Error('Indique le dossier de musique de test.');
 const PORT = 4398;
+const CPORT = PORT + 2; // application Serveur (console), ce PC uniquement
 const base = `http://127.0.0.1:${PORT}`;
+const cbase = `http://127.0.0.1:${CPORT}`;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-smoke-'));
 const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-public-'));
 fs.writeFileSync(path.join(publicDir, 'index.html'), '<!doctype html><title>test</title>');
+fs.writeFileSync(path.join(publicDir, 'console.html'), '<!doctype html><title>Serveur</title>');
 fs.mkdirSync(path.join(publicDir, 'assets'));
 fs.writeFileSync(path.join(publicDir, 'assets', 'app.js'), 'console.log(1)');
 
@@ -53,6 +56,27 @@ async function call(method, url, body, headers = {}) {
   return { status: res.status, json, text, headers: res.headers };
 }
 const get = (u, h) => call('GET', u, undefined, h);
+// Requêtes vers la console (application Serveur) : pas de compte, c'est le PC qui fait foi.
+async function ccall(method, url, body, headers = {}) {
+  const res = await fetch(cbase + url, {
+    method,
+    headers: {
+      'x-mb': '1',
+      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = undefined;
+  }
+  return { status: res.status, json, text, headers: res.headers };
+}
+const cget = (u, h) => ccall('GET', u, undefined, h);
 
 let passed = 0;
 function ok(name) {
@@ -62,7 +86,7 @@ function ok(name) {
 
 async function waitScan() {
   for (let i = 0; i < 100; i++) {
-    const s = (await get('/api/scan')).json;
+    const s = (await cget('/api/console/scan')).json;
     if (!s.running && s.finishedAt) return s;
     await sleep(200);
   }
@@ -79,59 +103,90 @@ try {
   }
 
   console.log('Sécurité');
-  assert.equal((await call('POST', '/api/scan', {}, { 'x-mb': '' })).status, 403);
-  ok('POST sans en-tête x-mb refusé');
-  assert.equal((await call('POST', '/api/scan', {}, { origin: 'https://evil.example' })).status, 403);
-  ok('POST depuis un autre site refusé');
-  const hostStatus = await new Promise((resolve, reject) => {
-    const req = http.request(
-      { host: '127.0.0.1', port: PORT, path: '/api/health', headers: { host: 'evil.example' } },
-      (res) => {
-        res.resume();
-        resolve(res.statusCode);
-      },
-    );
-    req.on('error', reject);
-    req.end();
-  });
-  assert.equal(hostStatus, 403);
-  ok('Hôte inconnu refusé (DNS rebinding)');
+  assert.equal((await ccall('POST', '/api/console/scan', {}, { 'x-mb': '' })).status, 403);
+  assert.equal((await call('POST', '/api/auth/login', {}, { 'x-mb': '' })).status, 403);
+  ok('POST sans en-tête x-mb refusé (console et lecteur)');
+  assert.equal((await ccall('POST', '/api/console/scan', {}, { origin: 'https://evil.example' })).status, 403);
+  assert.equal((await call('POST', '/api/auth/login', {}, { origin: 'https://evil.example' })).status, 403);
+  ok('POST depuis un autre site refusé (console et lecteur)');
+  const hostStatus = (port) =>
+    new Promise((resolve, reject) => {
+      const req = http.request(
+        { host: '127.0.0.1', port, path: '/api/health', headers: { host: 'evil.example' } },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode);
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  assert.equal(await hostStatus(PORT), 403);
+  assert.equal(await hostStatus(CPORT), 403);
+  ok('Hôte inconnu refusé (DNS rebinding), sur le lecteur comme sur la console');
 
   console.log('Premier démarrage');
   let r = await get('/api/auth/state');
-  assert.deepEqual(r.json, { hasUsers: false, signupOpen: true, canSetup: true, user: null });
-  for (const u of ['/api/tracks', '/api/home', '/api/settings', '/api/stream/1', '/api/cover/' + 'a'.repeat(40), '/api/remote']) {
+  assert.deepEqual(r.json, { hasUsers: false, signupOpen: true, user: null });
+  for (const u of ['/api/tracks', '/api/home', '/api/about', '/api/stats', '/api/scan', '/api/stream/1', '/api/cover/' + 'a'.repeat(40)]) {
     r = await get(u);
     assert.equal(r.status, 401, u);
     assert.equal(r.json.code, 'login');
   }
-  assert.equal((await call('PUT', '/api/settings', { musicDirs: [libDir] })).status, 401);
   assert.equal((await get('/api/health')).status, 200);
   ok('Sans compte : données refusées (401), seuls /api/health et l\'état de connexion répondent');
 
+  console.log('Deux applications, deux portes');
+  r = await cget('/api/console/info');
+  assert.equal(r.status, 200, 'la console répond sans compte : c\'est le PC qui fait foi');
+  assert.equal(r.json.dataDir, dataDir);
+  assert.equal(r.json.playerUrl, base);
+  for (const u of ['/api/tracks', '/api/home', '/api/stream/1', '/api/auth/state', '/api/stats', '/api/about']) {
+    assert.equal((await cget(u)).status, 404, `la console n'a pas ${u}`);
+  }
+  assert.equal((await cget('/api/health')).status, 200);
+  for (const [m, u, b] of [
+    ['GET', '/api/console/info'],
+    ['GET', '/api/console/users'],
+    ['POST', '/api/console/users', { email: 'x@example.com', password: 'motdepasse1' }],
+    ['PUT', '/api/console/music', { musicDirs: [] }],
+    ['POST', '/api/console/scan', {}],
+    ['POST', '/api/console/upload'],
+    ['POST', '/api/console/shutdown'],
+    ['PUT', '/api/console/remote', { enabled: true }],
+  ]) {
+    assert.equal((await call(m, u, b)).status, 404, `le lecteur n'a pas ${m} ${u}`);
+  }
+  assert.equal((await get('/console.html')).status, 404);
+  assert.equal((await cget('/index.html')).status, 404);
+  ok('Le lecteur n\'a aucune route de gestion ; la console n\'a aucune route de lecture');
+
+  r = await cget('/');
+  assert.equal(r.status, 200);
+  assert.match(r.text, /Serveur/, 'la console sert sa propre page');
+  ok('La console sert sa propre page (console.html)');
+
   assert.equal((await call('POST', '/api/auth/register', { email: 'pas-un-mail', password: 'motdepasse1' })).status, 400);
   assert.equal((await call('POST', '/api/auth/register', { email: 'admin@example.com', password: 'court' })).status, 400);
-  r = await call('POST', '/api/auth/register', { email: 'admin@example.com', password: 'motdepasse1' }, { 'x-forwarded-for': '203.0.113.9' });
-  assert.equal(r.status, 403, 'le premier compte ne se crée pas depuis un relais');
-  ok('Adresse invalide, mot de passe trop court, création du premier compte depuis un relais : refusés');
+  ok('Adresse invalide, mot de passe trop court : refusés');
 
   r = await call('POST', '/api/auth/register', { email: ' Admin@Example.com ', name: 'Tristan', password: 'motdepasse1' });
   assert.equal(r.status, 201, r.text);
-  assert.equal(r.json.user.isAdmin, true);
+  assert.equal(r.json.user.isAdmin, undefined, 'aucun rôle d\'administrateur dans le lecteur');
   assert.equal(r.json.user.email, 'admin@example.com');
   assert.match(r.headers.get('set-cookie'), /HttpOnly/);
   assert.ok(jar.length > 40);
   const adminCk = jar;
   r = await get('/api/auth/state');
   assert.equal(r.json.user.name, 'Tristan');
-  assert.equal(r.json.canSetup, false);
-  ok('Premier compte = administrateur, connecté aussitôt (cookie HttpOnly)');
+  assert.equal(r.json.user.isAdmin, undefined);
+  ok('Premier compte : connecté aussitôt (cookie HttpOnly), sans pouvoir d\'administration');
 
   console.log('Réglages et analyse');
-  r = await call('PUT', '/api/settings', { musicDirs: ['/chemin/inexistant'] });
+  r = await ccall('PUT', '/api/console/music', { musicDirs: ['/chemin/inexistant'] });
   assert.equal(r.status, 400);
   ok('Dossier inexistant refusé');
-  r = await call('PUT', '/api/settings', { musicDirs: [libDir] });
+  r = await ccall('PUT', '/api/console/music', { musicDirs: [libDir] });
   assert.equal(r.status, 200);
   let scan = await waitScan();
   assert.equal(scan.added, 31, `31 titres attendus, reçu ${scan.added}`);
@@ -303,7 +358,7 @@ try {
   await call('PUT', `/api/favorites/${victim.id}`);
   const victimFile = fs.readdirSync(orphanDir).find((n) => n.startsWith('01'));
   fs.renameSync(path.join(orphanDir, victimFile), path.join(moved, 'renommé.ogg'));
-  await call('POST', '/api/scan', {});
+  await ccall('POST', '/api/console/scan', {});
   await sleep(300);
   scan = await waitScan();
   assert.equal(scan.removed, 0, 'un fichier déplacé n\'est pas supprimé');
@@ -314,7 +369,7 @@ try {
   ok('Fichier déplacé : même titre, like conservé');
 
   fs.unlinkSync(path.join(moved, 'renommé.ogg'));
-  await call('POST', '/api/scan', {});
+  await ccall('POST', '/api/console/scan', {});
   await sleep(300);
   scan = await waitScan();
   assert.equal(scan.removed, 1);
@@ -322,17 +377,17 @@ try {
   assert.ok(!(await get('/api/favorites/ids')).json.includes(victim.id));
   ok('Fichier supprimé : retiré de la bibliothèque et des favoris');
 
-  await call('POST', '/api/scan', {});
+  await ccall('POST', '/api/console/scan', {});
   await sleep(300);
   scan = await waitScan();
   assert.equal(scan.added + scan.updated + scan.removed, 0);
   ok('Analyse suivante sans changement : rien à faire (incrémentale)');
 
   // Dossier déconnecté : on ne supprime rien
-  r = await call('PUT', '/api/settings', { musicDirs: [libDir, moved] });
+  r = await ccall('PUT', '/api/console/music', { musicDirs: [libDir, moved] });
   await waitScan();
   fs.rmSync(moved, { recursive: true });
-  await call('POST', '/api/scan', {});
+  await ccall('POST', '/api/console/scan', {});
   await sleep(300);
   scan = await waitScan();
   assert.equal((await get('/api/stats')).json.tracks, 30);
@@ -340,7 +395,7 @@ try {
   ok('Dossier disparu : avertissement, titres conservés');
 
   // Dossier retiré des réglages : ses titres disparaissent
-  r = await call('PUT', '/api/settings', { musicDirs: [path.join(libDir, 'Alt-J')] });
+  r = await ccall('PUT', '/api/console/music', { musicDirs: [path.join(libDir, 'Alt-J')] });
   await sleep(300);
   await waitScan();
   assert.equal((await get('/api/stats')).json.tracks, 4);
@@ -388,21 +443,21 @@ try {
   }
   const cookieOf = (res) => /mb_session=[^;]+/.exec(res.headers.get('set-cookie') ?? '')?.[0];
 
-  let st = (await get('/api/remote')).json;
+  let st = (await cget('/api/console/remote')).json;
   assert.equal(st.enabled, false);
   assert.equal(st.running, false);
   await assert.rejects(() => fetch(rbase + '/api/health'), 'rien n\'écoute tant que l\'accès n\'est pas activé');
   ok('Désactivé par défaut : aucun port ouvert');
 
-  st = (await call('PUT', '/api/remote', { enabled: true })).json;
+  st = (await ccall('PUT', '/api/console/remote', { enabled: true })).json;
   assert.equal(st.running, true, JSON.stringify(st));
   assert.ok(Array.isArray(st.addresses));
   assert.equal(st.pairing, undefined, 'plus de code d\'association');
-  ok('Activation par l\'administrateur : port ouvert');
+  ok('Activation depuis l\'application Serveur : port ouvert');
 
   // Visiteur non connecté
   assert.equal((await rcall('GET', '/api/health')).status, 200);
-  for (const u of ['/api/tracks', '/api/albums', '/api/stream/1', '/api/settings', '/api/home', '/api/search?q=a']) {
+  for (const u of ['/api/tracks', '/api/albums', '/api/stream/1', '/api/about', '/api/home', '/api/search?q=a']) {
     assert.equal((await rcall('GET', u)).status, 401, u);
   }
   assert.equal((await rcall('GET', '/api/cover/' + 'a'.repeat(40))).status, 401);
@@ -414,7 +469,7 @@ try {
   r = await rcall('GET', '/manifest.webmanifest');
   assert.equal(r.json?.name, 't', 'le manifeste est lu sans identifiants : il doit rester public');
   r = await rcall('GET', '/api/auth/state');
-  assert.deepEqual(r.json, { hasUsers: true, signupOpen: true, canSetup: false, user: null });
+  assert.deepEqual(r.json, { hasUsers: true, signupOpen: true, user: null });
   assert.equal((await rcall('POST', '/api/auth/login', { mb: false, body: { email: 'a@b.fr', password: 'x' } })).status, 403);
   ok('Sans connexion : musique refusée (401), interface et état de connexion seuls accessibles');
 
@@ -442,7 +497,7 @@ try {
     headers: { 'user-agent': UA },
   });
   assert.equal(r.status, 201, r.text);
-  assert.equal(r.json.user.isAdmin, false);
+  assert.equal(r.json.user.isAdmin, undefined);
   const setCookie = r.headers.get('set-cookie');
   assert.match(setCookie, /HttpOnly/);
   assert.match(setCookie, /SameSite=Lax/);
@@ -453,7 +508,7 @@ try {
   assert.equal(r.status, 409, 'une adresse ne sert qu\'une fois, majuscules ou non');
   assert.equal((await rcall('POST', '/api/auth/register', { body: { email: 'bad', password: 'motdepasse1' } })).status, 400);
   assert.equal((await rcall('POST', '/api/auth/register', { body: { email: 'x@example.com', password: '1234567' } })).status, 400);
-  ok('Inscription ouverte : compte créé (non administrateur), doublons et saisies invalides refusés');
+  ok('Inscription ouverte : compte créé, doublons et saisies invalides refusés');
 
   const wrong = await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'pas-le-bon' } });
   const unknown = await rcall('POST', '/api/auth/login', { body: { email: 'personne@example.com', password: 'pas-le-bon' } });
@@ -477,21 +532,19 @@ try {
   const aTrack = r.json[0].id;
   const bTrack = r.json[1].id;
   assert.equal((await rcall('GET', `/api/stream/${aTrack}`, { cookie: alice, headers: { range: 'bytes=0-99' } })).status, 206);
-  r = await rcall('GET', '/api/settings', { cookie: alice });
+  r = await rcall('GET', '/api/about', { cookie: alice });
   assert.equal(r.json.local, false);
-  assert.deepEqual(r.json.musicDirs, []);
-  assert.equal(r.json.dataDir, '');
-  assert.equal(r.json.uploadsDir, '');
-  assert.equal(r.json.canBrowse, false);
+  assert.deepEqual(Object.keys(r.json).sort(), ['local', 'version'], 'le lecteur ne dévoile aucun chemin ni réglage du serveur');
   assert.equal((await rcall('PUT', '/api/favorites/1', { cookie: alice, headers: { origin: 'https://evil.example' } })).status, 403);
-  ok('Personne ordinaire : bibliothèque et lecture (Range) ; réglages du serveur masqués ; origine étrangère refusée');
+  ok('Lecteur à distance : bibliothèque et lecture (Range) ; aucun réglage du serveur exposé ; origine étrangère refusée');
 
-  for (const [m, u, b] of [
+  // Aucune gestion du serveur depuis le lecteur, quel que soit le compte (le premier compte compris).
+  const probes = [
     ['PUT', '/api/settings', { musicDirs: [] }],
     ['PUT', '/api/autostart', { enabled: true }],
     ['GET', '/api/autostart', undefined],
     ['POST', '/api/scan', {}],
-    ['POST', '/api/shutdown', undefined],
+    ['POST', '/api/upload', undefined],
     ['POST', '/api/settings/browse', undefined],
     ['POST', '/api/update/check', undefined],
     ['GET', '/api/remote', undefined],
@@ -499,14 +552,24 @@ try {
     ['GET', '/api/admin/users', undefined],
     ['POST', '/api/admin/users', { email: 'z@example.com', password: 'motdepasse1' }],
     ['PUT', '/api/admin/signup', { open: false }],
-    ['PATCH', '/api/admin/users/1', { isAdmin: false }],
+    ['PATCH', '/api/admin/users/1', { isAdmin: true }],
     ['POST', '/api/admin/users/1/reset', undefined],
     ['DELETE', '/api/admin/users/1', undefined],
-  ]) {
-    assert.equal((await rcall(m, u, { cookie: alice, body: b })).status, 403, `${m} ${u}`);
+    ['GET', '/api/console/info', undefined],
+    ['GET', '/api/console/users', undefined],
+    ['POST', '/api/console/shutdown', undefined],
+  ];
+  for (const cookie of [alice, adminCk]) {
+    for (const [m, u, b] of probes) {
+      assert.equal((await rcall(m, u, { cookie, body: b ?? (m === 'GET' ? undefined : {}) })).status, 404, `${m} ${u}`);
+    }
+    assert.equal((await rcall('POST', '/api/shutdown', { cookie, body: {} })).status, 403);
   }
-  assert.equal((await get('/api/remote')).json.running, true, 'le serveur tourne toujours');
-  ok('Dossiers, analyse, arrêt, mises à jour, accès réseau et comptes : refusés à une personne ordinaire');
+  for (const [m, u, b] of probes) {
+    assert.equal((await call(m, u, b ?? (m === 'GET' ? undefined : {}))).status, 404, `sur le PC aussi : ${m} ${u}`);
+  }
+  assert.equal((await cget('/api/console/remote')).json.running, true, 'le serveur tourne toujours');
+  ok('Dossiers, analyse, import, arrêt, mises à jour, accès réseau, comptes : introuvables depuis le lecteur, même connecté, même sur le PC');
 
   // Données personnelles
   r = await call('POST', '/api/playlists', { name: 'Playlist admin' });
@@ -539,7 +602,7 @@ try {
   assert.ok((await get('/api/favorites/ids')).json.includes(aTrack));
   ok('Playlists, favoris et écoutes : propres à chaque personne (la playlist d\'un autre est introuvable)');
 
-  // Envoi d'un fichier audio (réservé à l'administrateur)
+  // Importation de musique : application Serveur uniquement
   const findAudio = (d) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const f = path.join(d, e.name);
@@ -551,31 +614,31 @@ try {
   };
   const sample = fs.readFileSync(findAudio(libDir));
   const uploadsDir = path.join(dataDir, 'Importations');
-  const upload = (name, data, { cookie = adminCk, mb = true } = {}) =>
-    fetch(`${rbase}/api/upload?name=${encodeURIComponent(name)}`, {
+  const upload = (name, data, { mb = true, port = CPORT, route = '/api/console/upload', cookie } = {}) =>
+    fetch(`http://127.0.0.1:${port}${route}?name=${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/octet-stream', ...(mb ? { 'x-mb': '1' } : {}), ...(cookie ? { cookie } : {}) },
       body: data,
     }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => undefined) }));
-  const before = (await rcall('GET', '/api/tracks', { cookie: adminCk })).json.length;
+  const trackIds = async () => new Set((await rcall('GET', '/api/tracks', { cookie: adminCk })).json.map((t) => t.id));
+  const before = await trackIds();
   r = await upload('Mon envoi.mp3', sample);
   assert.equal(r.status, 201, JSON.stringify(r.json));
   assert.equal(r.json.duplicate, false);
-  assert.ok(r.json.track.id > 0 && r.json.track.duration > 0);
-  const up1 = r.json.track;
+  const after = await trackIds();
+  assert.equal(after.size, before.size + 1);
+  const up1 = [...after].find((id) => !before.has(id));
   assert.ok(fs.existsSync(path.join(uploadsDir, 'Mon envoi.mp3')), 'le fichier arrive dans le dossier réservé');
   assert.deepEqual(fs.readdirSync(uploadsDir).filter((f) => f.endsWith('.part')), []);
-  assert.equal((await rcall('GET', '/api/tracks', { cookie: adminCk })).json.length, before + 1);
-  assert.equal((await rcall('GET', `/api/stream/${up1.id}`, { cookie: adminCk, headers: { range: 'bytes=0-99' } })).status, 206);
-  assert.deepEqual((await get('/api/settings')).json.musicDirs.filter((d) => d.includes('Envois')), [], 'pas dans les dossiers de musique');
-  assert.equal((await get('/api/settings')).json.uploadsDir, uploadsDir);
-  assert.equal((await rcall('GET', '/api/settings', { cookie: alice })).json.uploadsDir, '');
-  ok('Envoi depuis le téléphone : fichier rangé dans « Importations », titre analysé, lisible, hors dossiers de musique');
+  assert.equal((await rcall('GET', `/api/stream/${up1}`, { cookie: adminCk, headers: { range: 'bytes=0-99' } })).status, 206);
+  const info = (await cget('/api/console/info')).json;
+  assert.deepEqual(info.musicDirs.filter((d) => d.includes('Importations')), [], 'pas dans les dossiers de musique');
+  assert.equal(info.uploadsDir, uploadsDir);
+  ok('Importation depuis l\'application Serveur : fichier rangé dans « Importations », titre analysé, lisible, hors dossiers de musique');
 
   r = await upload('Mon envoi.mp3', sample);
   assert.equal(r.status, 200);
   assert.equal(r.json.duplicate, true);
-  assert.equal(r.json.track.id, up1.id);
   assert.equal(fs.readdirSync(uploadsDir).length, 1);
   ok('Même fichier renvoyé : pas de doublon');
 
@@ -593,25 +656,47 @@ try {
   assert.equal((await upload('vide.mp3', Buffer.alloc(0))).status, 400);
   ok('Extension inconnue, fichier illisible ou vide : refusés proprement');
 
-  assert.equal((await upload('x.mp3', sample, { cookie: null })).status, 401);
   assert.equal((await upload('x.mp3', sample, { mb: false })).status, 403);
-  r = await upload('x.mp3', sample, { cookie: alice });
-  assert.equal(r.status, 403, 'l\'import est réservé à l\'administrateur');
-  ok('Envoi refusé sans connexion, à une personne ordinaire, et sans en-tête x-mb');
+  for (const cookie of [alice, adminCk]) {
+    assert.equal((await upload('x.mp3', sample, { port: RPORT, route: '/api/upload', cookie })).status, 404, 'le lecteur n\'accepte aucun envoi');
+  }
+  assert.equal((await upload('x.mp3', sample, { port: PORT, route: '/api/upload', cookie: adminCk })).status, 404);
+  assert.ok(!fs.existsSync(path.join(uploadsDir, 'x.mp3')));
+  ok('Envoi refusé sans en-tête x-mb ; le lecteur (même connecté) n\'accepte aucun fichier');
 
-  console.log('Administration des comptes');
-  r = await get('/api/admin/users');
+  console.log('Gestion des comptes (application Serveur)');
+  r = await cget('/api/console/users');
   assert.equal(r.json.users.length, 2);
   assert.equal(r.json.signupOpen, true);
+  assert.deepEqual(r.json.legacy, { playlists: 0, favorites: 0 });
   const aliceRow = r.json.users.find((u) => u.email === 'alice@example.com');
   assert.equal(aliceRow.playlistCount, 1);
   assert.equal(aliceRow.sessionCount, 2);
-  const adminId = r.json.users.find((u) => u.isAdmin).id;
-  assert.equal(r.json.users[0].isAdmin, true, 'l\'administrateur est listé en premier');
-  ok('Liste des comptes : 2 comptes, playlists et appareils comptés');
+  assert.ok(r.json.users.every((u) => u.isAdmin === undefined), 'plus de rôle d\'administrateur');
+  const stc = (await cget('/api/console/stats')).json;
+  assert.equal(stc.users, 2);
+  assert.ok(stc.devices >= 3 && stc.tracks === 6, JSON.stringify(stc)); // 4 titres d'Alt-J + 2 importés
+  ok('Liste des comptes : 2 comptes, playlists et appareils comptés, chiffres de la vue d\'ensemble');
+
+  r = await cget('/api/console/sessions');
+  assert.ok(r.json.length >= 3);
+  assert.ok(r.json.some((x) => x.email === 'alice@example.com' && x.device === 'Pixel 7'));
+  const aliceSession = r.json.find((x) => x.email === 'alice@example.com');
+  ok('Appareils : tous les appareils connectés, tous comptes confondus');
+
+  // Retrait d'un appareil depuis le serveur
+  assert.equal((await ccall('DELETE', `/api/console/sessions/${aliceSession.id}`)).status, 200);
+  const stillIn = [];
+  for (const c of [alice, alice2]) stillIn.push((await rcall('GET', '/api/tracks', { cookie: c })).status === 200);
+  assert.equal(stillIn.filter(Boolean).length, 1, 'un seul des deux appareils est déconnecté');
+  if (!stillIn[0]) {
+    r = await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'motdepasse1' }, headers: { 'user-agent': UA } });
+    alice = cookieOf(r);
+  }
+  ok('Un appareil retiré depuis l\'application Serveur est déconnecté, l\'autre reste connecté');
 
   // Inscriptions fermées
-  r = await call('PUT', '/api/admin/signup', { open: false });
+  r = await ccall('PUT', '/api/console/signup', { open: false });
   assert.equal(r.json.signupOpen, false);
   r = await rcall('POST', '/api/auth/register', { body: { email: 'intrus@example.com', password: 'motdepasse1' } });
   assert.equal(r.status, 403);
@@ -619,8 +704,8 @@ try {
   assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'motdepasse1' } })).status, 200);
   ok('Inscriptions fermées : nouveaux comptes refusés, les comptes existants se connectent toujours');
 
-  // Compte créé par l'administrateur : mot de passe provisoire
-  r = await call('POST', '/api/admin/users', { email: 'bob@example.com', name: 'Bob', password: 'provisoire1' });
+  // Compte créé depuis le serveur : mot de passe provisoire
+  r = await ccall('POST', '/api/console/users', { email: 'bob@example.com', name: 'Bob', password: 'provisoire1' });
   assert.equal(r.status, 201, r.text);
   assert.equal(r.json.users.length, 3);
   r = await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: 'provisoire1' } });
@@ -638,9 +723,9 @@ try {
   assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: 'nouveaumdp1' } })).status, 200);
   ok('Mot de passe provisoire : tout est bloqué tant qu\'il n\'est pas changé, puis la personne choisit le sien');
 
-  // Mot de passe oublié : l'administrateur le réinitialise
-  const bobId = (await get('/api/admin/users')).json.users.find((u) => u.email === 'bob@example.com').id;
-  r = await call('POST', `/api/admin/users/${bobId}/reset`);
+  // Mot de passe oublié : réinitialisé depuis le serveur
+  const bobId = (await cget('/api/console/users')).json.users.find((u) => u.email === 'bob@example.com').id;
+  r = await ccall('POST', `/api/console/users/${bobId}/reset`);
   assert.equal(r.status, 200, r.text);
   assert.match(r.json.password, /^[A-Za-z2-9]{10}$/);
   const temp = r.json.password;
@@ -650,42 +735,24 @@ try {
   assert.equal(r.json.user.mustChange, true);
   ok('Réinitialisation : mot de passe provisoire affiché une fois, anciens appareils déconnectés');
 
-  // Désactivation, droits
-  assert.equal((await call('PATCH', `/api/admin/users/${bobId}`, { disabled: true })).status, 200);
+  // Désactivation
+  assert.equal((await ccall('PATCH', `/api/console/users/${bobId}`, { disabled: true })).status, 200);
   assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: temp } })).status, 401);
   assert.equal((await rcall('GET', '/api/auth/state', { cookie: cookieOf(r) })).json.user, null);
-  await call('PATCH', `/api/admin/users/${bobId}`, { disabled: false });
+  await ccall('PATCH', `/api/console/users/${bobId}`, { disabled: false });
   assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: temp } })).status, 200);
+  assert.equal((await ccall('PATCH', '/api/console/users/99999', { disabled: true })).status, 404);
+  assert.equal((await ccall('DELETE', '/api/console/users/99999')).status, 404);
   ok('Compte désactivé : connexion et sessions coupées ; réactivé : il se reconnecte');
 
-  for (const [m, u, b] of [
-    ['PATCH', `/api/admin/users/${adminId}`, { disabled: true }],
-    ['PATCH', `/api/admin/users/${adminId}`, { isAdmin: false }],
-    ['POST', `/api/admin/users/${adminId}/reset`],
-    ['DELETE', `/api/admin/users/${adminId}`],
-  ]) {
-    assert.equal((await call(m, u, b)).status, 409, `${m} ${u}`);
-  }
-  assert.equal((await call('PATCH', '/api/admin/users/99999', { disabled: true })).status, 404);
-  ok('L\'administrateur ne peut pas se désactiver, se rétrograder, se réinitialiser ni se supprimer');
-
-  const aliceId = aliceRow.id;
-  r = await call('PATCH', `/api/admin/users/${aliceId}`, { isAdmin: true });
-  assert.equal(r.status, 200);
-  assert.equal((await rcall('GET', '/api/admin/users', { cookie: alice })).status, 200, 'rôle appliqué sans reconnexion');
-  assert.equal((await rcall('PATCH', `/api/admin/users/${adminId}`, { cookie: alice, body: { isAdmin: false } })).status, 200);
-  assert.equal((await rcall('PATCH', `/api/admin/users/${aliceId}`, { cookie: alice, body: { isAdmin: false } })).status, 409);
-  await rcall('PATCH', `/api/admin/users/${adminId}`, { cookie: alice, body: { isAdmin: true } });
-  assert.equal((await call('PATCH', `/api/admin/users/${aliceId}`, { isAdmin: false })).status, 200);
-  ok('Promotion et rétrogradation d\'un compte');
-
   // Suppression : les données de la personne disparaissent, pas les autres
-  assert.equal((await call('DELETE', `/api/admin/users/${aliceId}`)).status, 200);
+  const aliceId = aliceRow.id;
+  assert.equal((await ccall('DELETE', `/api/console/users/${aliceId}`)).status, 200);
   assert.equal((await rcall('GET', '/api/tracks', { cookie: alice })).status, 401);
   assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'motdepasse1' } })).status, 401);
   assert.ok(!(await get('/api/playlists')).json.some((p) => p.name === 'Playlist Alice'));
   assert.equal((await get(`/api/playlists/${adminPl}`)).status, 200);
-  assert.equal((await get('/api/admin/users')).json.users.length, 2);
+  assert.equal((await cget('/api/console/users')).json.users.length, 2);
   ok('Suppression d\'un compte : accès coupé, ses playlists supprimées, celles des autres intactes');
 
   // Déconnexion
@@ -716,14 +783,14 @@ try {
   ok('Essais de connexion limités (429 après 8 échecs sur la même adresse)');
 
   // Arrêt du réseau
-  await call('PUT', '/api/remote', { enabled: false });
+  await ccall('PUT', '/api/console/remote', { enabled: false });
   await assert.rejects(() => fetch(rbase + '/api/health'));
-  assert.equal((await get('/api/remote')).json.running, false);
+  assert.equal((await cget('/api/console/remote')).json.running, false);
   ok('Désactivation : le port se ferme');
 
-  // Arrêt : réservé à l'administrateur, ou au jeton local (installateur)
+  // Arrêt : depuis l'application Serveur, ou avec le jeton local (installateur) ; jamais depuis le lecteur
   r = await call('POST', '/api/shutdown', undefined, { cookie: bob3 });
-  assert.equal(r.status, 403, 'une personne ordinaire ne peut pas arrêter le serveur');
+  assert.equal(r.status, 403, 'le lecteur ne peut pas arrêter le serveur');
   assert.equal((await call('POST', '/api/shutdown', undefined, { cookie: '', 'x-mb-token': 'faux' })).status, 401);
   const token = fs.readFileSync(path.join(dataDir, 'server.token'), 'utf8').trim();
   assert.ok(token.length >= 32);
@@ -732,7 +799,7 @@ try {
   assert.equal((await call('POST', '/api/shutdown', undefined, { cookie: '', 'x-mb-token': token })).status, 200);
   for (let i = 0; i < 30 && server.exitCode === null; i++) await sleep(100);
   assert.equal(server.exitCode, 0, 'le serveur s\'est arrêté');
-  ok('Arrêt du serveur : refusé sans droit, accepté avec le jeton local (installateur)');
+  ok('Arrêt du serveur : refusé depuis le lecteur, accepté avec le jeton local (installateur)');
 
   console.log(`\n${passed} vérifications réussies.`);
 } catch (e) {

@@ -6,7 +6,7 @@ import { api, ApiError } from '../lib/api';
 import { queryClient } from '../lib/queryClient';
 import { toast } from '../store/ui';
 
-const KEY = ['remote'];
+const KEY = ['console', 'remote'];
 
 function QrCode({ value }: { value: string }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -32,11 +32,11 @@ function QrCode({ value }: { value: string }) {
 
 const KIND_LABEL = { lan: 'Wi-Fi de la maison', tailscale: 'Tailscale (de partout)' } as const;
 
-/** Administration > Accès depuis d'autres appareils : ouvre ou ferme l'écoute réseau du serveur. */
+/** Application Serveur > Appareils : ouvre ou ferme l'écoute réseau du serveur, et montre comment y connecter un téléphone. */
 export function RemoteAccess() {
   const { data: status } = useQuery({
     queryKey: KEY,
-    queryFn: () => api.get<RemoteStatus>('/api/remote'),
+    queryFn: () => api.get<RemoteStatus>('/api/console/remote'),
     refetchInterval: 5000,
     staleTime: 0,
   });
@@ -46,7 +46,7 @@ export function RemoteAccess() {
   const setEnabled = async (enabled: boolean) => {
     setBusy(true);
     try {
-      queryClient.setQueryData(KEY, await api.put<RemoteStatus>('/api/remote', { enabled }));
+      queryClient.setQueryData(KEY, await api.put<RemoteStatus>('/api/console/remote', { enabled }));
       toast(enabled ? 'Accès depuis les autres appareils activé' : 'Accès depuis les autres appareils désactivé');
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Impossible de changer ce réglage.', 'error');
@@ -69,9 +69,9 @@ export function RemoteAccess() {
 
   return (
     <section className="setting-block phone" aria-labelledby="remote-title">
-      <h2 id="remote-title">Accès depuis d’autres appareils</h2>
+      <h2 id="remote-title">Ajouter un téléphone ou un autre appareil</h2>
       <p className="muted">
-        Pour écouter depuis un téléphone ou un autre ordinateur, ouvre l’accès réseau puis donne l’adresse ci-dessous. Chaque personne se connecte avec son propre compte : il n’y a plus de code à saisir.
+        Ouvre l’accès réseau, puis donne l’adresse ci-dessous à la personne. Elle ouvre le lecteur sur son appareil et se connecte avec son propre compte : il n’y a pas de code à saisir.
       </p>
 
       <div className="switch-row">
@@ -109,8 +109,8 @@ export function RemoteAccess() {
                   <li>
                     Sur le téléphone (même Wi-Fi que le serveur, ou connecté à Tailscale), scanne le QR code ou ouvre <code>{address.url}</code> dans Chrome.
                   </li>
-                  <li>La personne se connecte avec son adresse e-mail et son mot de passe, ou crée son compte si les inscriptions sont ouvertes.</li>
-                  <li>Dans Chrome, menu ⋮ puis « Ajouter à l’écran d’accueil » : l’application s’installe.</li>
+                  <li>La personne se connecte avec son adresse e-mail et son mot de passe, ou crée son compte si les inscriptions sont ouvertes (page « Comptes »).</li>
+                  <li>Dans Chrome, menu ⋮ puis « Ajouter à l’écran d’accueil » : le lecteur s’installe. (Ou installe l’application Android Spotifree et saisis cette adresse.)</li>
                 </ol>
                 <div className="setting-actions">
                   <button type="button" className="btn" onClick={() => void copy(address.url)}>

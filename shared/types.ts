@@ -106,17 +106,26 @@ export interface ScanStatus {
   warnings: string[];
 }
 
-export interface Settings {
-  musicDirs: string[];
-  defaultMusicDir: string;
-  platform: string;
-  dataDir: string;
-  /** Dossier du serveur où arrivent les fichiers importés (vide pour les non-administrateurs). */
-  uploadsDir: string;
+/** Ce que le lecteur a besoin de savoir du serveur. */
+export interface AppInfo {
   version: string;
-  canBrowse: boolean;
   /** Vrai quand la requête vient du PC qui héberge le serveur. */
   local: boolean;
+}
+
+/** Application « Serveur » : réglages et chemins du serveur. */
+export interface ConsoleInfo {
+  version: string;
+  platform: string;
+  dataDir: string;
+  /** Dossier du serveur où arrivent les fichiers importés. */
+  uploadsDir: string;
+  musicDirs: string[];
+  defaultMusicDir: string;
+  /** Vrai quand une fenêtre de choix de dossier peut s'ouvrir (Windows). */
+  canBrowse: boolean;
+  /** Adresse du lecteur sur ce PC. */
+  playerUrl: string;
 }
 
 /** Compte connecté. */
@@ -124,8 +133,7 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  isAdmin: boolean;
-  /** Mot de passe provisoire (donné par l'administrateur) : à remplacer avant toute chose. */
+  /** Mot de passe provisoire (donné depuis l'application Serveur) : à remplacer avant toute chose. */
   mustChange: boolean;
 }
 
@@ -133,8 +141,6 @@ export interface AuthState {
   /** Faux tant que personne n'a créé de compte (premier démarrage). */
   hasUsers: boolean;
   signupOpen: boolean;
-  /** Vrai si cette requête peut créer le compte administrateur (venue du PC du serveur). */
-  canSetup: boolean;
   user: User | null;
 }
 
@@ -151,7 +157,6 @@ export interface AdminUser {
   id: number;
   email: string;
   name: string;
-  isAdmin: boolean;
   disabled: boolean;
   mustChange: boolean;
   createdAt: number;
@@ -163,6 +168,19 @@ export interface AdminUser {
 export interface AdminUsers {
   users: AdminUser[];
   signupOpen: boolean;
+  /** Playlists et likes d'avant les comptes, pas encore rattachés à quelqu'un. */
+  legacy: { playlists: number; favorites: number };
+}
+
+/** Appareil connecté, vu depuis l'application Serveur (tous comptes confondus). */
+export interface ConsoleSession {
+  id: number;
+  userId: number;
+  userName: string;
+  email: string;
+  device: string;
+  createdAt: number;
+  lastSeen: number;
 }
 
 export interface RemoteAddress {
@@ -187,6 +205,16 @@ export interface Stats {
   artists: number;
   playlists: number;
   duration: number;
+}
+
+/** Aperçu du serveur (application Serveur). */
+export interface ConsoleStats {
+  tracks: number;
+  albums: number;
+  artists: number;
+  duration: number;
+  users: number;
+  devices: number;
 }
 
 export interface UpdateStatus {

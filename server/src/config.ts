@@ -11,6 +11,8 @@ export const isWin = process.platform === 'win32';
 export const PORT = Number(process.env.PORT) || 4242;
 /** Port d'écoute pour les appareils associés (téléphone), ouvert seulement si l'utilisateur l'active. */
 export const REMOTE_PORT = Number(process.env.REMOTE_PORT) || PORT + 1;
+/** Port de l'application « Serveur » : toujours limité à ce PC, jamais ouvert au réseau. */
+export const CONSOLE_PORT = Number(process.env.CONSOLE_PORT) || PORT + 2;
 /** Par défaut l'application n'est joignable que depuis ce PC. */
 export const HOST = process.env.HOST || '127.0.0.1';
 

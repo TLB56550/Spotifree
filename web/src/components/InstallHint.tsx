@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Smartphone, X } from 'lucide-react';
 import { isNativeApp } from '../lib/native';
-import { useSettings } from './Folders';
+import { useAbout } from '../lib/about';
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -37,7 +37,7 @@ const isStandalone = (): boolean =>
 
 /** Invite à ajouter l'application à l'écran d'accueil du téléphone. */
 export function InstallHint() {
-  const { data: settings } = useSettings();
+  const { data: about } = useAbout();
   const [, bump] = useState(0);
   const [hidden, setHidden] = useState(readHidden);
 
@@ -49,7 +49,7 @@ export function InstallHint() {
     };
   }, []);
 
-  if (!settings || settings.local || hidden || isStandalone() || isNativeApp()) return null;
+  if (!about || about.local || hidden || isStandalone() || isNativeApp()) return null;
 
   const hide = () => {
     setHidden(true);

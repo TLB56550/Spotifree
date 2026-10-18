@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
-import { HOST, PORT, REMOTE_PORT, VERSION, resolveDataDir, resolvePublicDir } from './config';
-import { Auth, checkPassword, cleanName, normalizeEmail } from './auth';
+import { CONSOLE_PORT, HOST, PORT, REMOTE_PORT, VERSION, resolveDataDir, resolvePublicDir } from './config';
+import { Auth } from './auth';
+import { ConsoleServer } from './consoleServer';
 import { ensureLaunchers, openAppWindow } from './desktop';
 import { getMusicDirs, openDb } from './db';
 import { RemoteAccess } from './remote';
@@ -35,9 +36,11 @@ const publicDir = resolvePublicDir();
 
 const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
 const remote = new RemoteAccess(db, app, REMOTE_PORT, log);
+const consoleServer = new ConsoleServer(app, CONSOLE_PORT, log);
 const quit = (code: number): Promise<void> => {
   scanner.stopWatching();
   void remote.close();
+  void consoleServer.close();
   return app.close().finally(() => process.exit(code));
 };
 const updater = new Updater(dataDir, log, () => quit(EXIT_RESTART));
@@ -48,25 +51,8 @@ try {
 } catch {
   // Sans ce fichier, seul un administrateur connecté peut arrêter le serveur (l'installateur le demandera à la main).
 }
-registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, updater, publicDir, host: HOST, port: PORT, remote, auth, localToken });
-
-// Serveur sans écran (NAS, Docker) : le premier administrateur peut être créé depuis l'environnement.
-if (!auth.hasUsers() && process.env.MB_ADMIN_EMAIL && process.env.MB_ADMIN_PASSWORD) {
-  try {
-    const email = normalizeEmail(process.env.MB_ADMIN_EMAIL);
-    await auth.createUser({
-      email,
-      name: cleanName(process.env.MB_ADMIN_NAME, email),
-      password: checkPassword(process.env.MB_ADMIN_PASSWORD),
-      isAdmin: true,
-    });
-    log(`Compte administrateur créé : ${email}`);
-  } catch (e) {
-    log(`Compte administrateur non créé : ${errMsg(e)}`);
-  }
-}
-
 const url = `http://127.0.0.1:${PORT}`;
+registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, updater, publicDir, host: HOST, port: PORT, consolePort: CONSOLE_PORT, playerUrl: url, remote, auth, localToken });
 
 try {
   await app.listen({ port: PORT, host: HOST });
@@ -79,7 +65,7 @@ try {
       const info = (await res.json()) as { app?: string };
       if (info.app === 'ma-bibliotheque') {
         log('Ma Bibliothèque est déjà lancée : ouverture de la fenêtre.');
-        if (process.env.OPEN_BROWSER === '1') openAppWindow(url);
+        if (process.env.OPEN_BROWSER === '1') await openAppWindow(url);
         process.exit(0);
       }
     } catch {
@@ -92,15 +78,17 @@ try {
   process.exit(1);
 }
 
+await consoleServer.start();
 log(`Ma Bibliothèque ${VERSION} est prête : ${url}`);
+log(`Application Serveur : http://127.0.0.1:${CONSOLE_PORT}`);
 log(`Données : ${dataDir}`);
-if (!auth.hasUsers()) log("Aucun compte pour l'instant : ouvre l'application sur ce PC pour créer le compte administrateur.");
+if (!auth.hasUsers()) log("Aucun compte pour l'instant : ouvre le lecteur sur ce PC pour créer le premier compte.");
 if (!publicDir) log("Attention : l'interface (dossier « public ») est introuvable.");
-if (process.env.OPEN_BROWSER === '1') openAppWindow(url);
+if (process.env.OPEN_BROWSER === '1') void openAppWindow(url);
 await remote.init();
 void ensureLaunchers(dataDir, log);
 
-if (!getMusicDirs(db).length) log("Aucun dossier de musique n'est configuré : choisis-le depuis l'application.");
+if (!getMusicDirs(db).length) log("Aucun dossier de musique n'est configuré : choisis-le depuis l'application Serveur.");
 scanner.watch();
 scanner.start();
 // Mise à jour automatique : recherche au démarrage (sans bloquer l'ouverture de l'application).

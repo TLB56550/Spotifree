@@ -4,7 +4,7 @@ import { openDb } from './db';
 import { HttpError } from './util';
 
 /**
- * Secours quand l'administrateur a oublié son mot de passe : se lance sur la machine du serveur
+ * Secours quand un mot de passe est oublié et que l'application Serveur est inaccessible : se lance sur la machine du serveur
  * (« Reinitialiser un mot de passe.bat »), crée un mot de passe provisoire et réactive le compte.
  */
 export async function runResetPassword(args: string[]): Promise<number> {

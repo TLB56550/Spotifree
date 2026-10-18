@@ -1,14 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, KeyRound, Shield, ShieldOff, Trash2, UserCheck, UserPlus, UserX } from 'lucide-react';
+import { Copy, KeyRound, Trash2, UserCheck, UserPlus, UserX } from 'lucide-react';
 import type { AdminUser, AdminUsers as AdminUsersData } from '@shared/types';
 import { api, ApiError } from '../lib/api';
-import { useUser } from '../lib/auth';
 import { formatAgo } from '../lib/format';
 import { queryClient } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 
-const KEY = ['admin-users'];
+const KEY = ['console', 'users'];
 const ALPHABET = '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
 
 function randomPassword(): string {
@@ -58,8 +57,7 @@ function CreateForm({ onCreated }: { onCreated: (h: Handout) => void }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
-  const [admin, setAdmin] = useState(false);
-  const [busy, setBusy] = useState(false);
+    const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const submit = async (e: FormEvent) => {
@@ -67,13 +65,12 @@ function CreateForm({ onCreated }: { onCreated: (h: Handout) => void }) {
     setBusy(true);
     setError('');
     try {
-      const res = await api.post<AdminUsersData>('/api/admin/users', { email, name, password, isAdmin: admin });
+      const res = await api.post<AdminUsersData>('/api/console/users', { email, name, password });
       queryClient.setQueryData(KEY, res);
       onCreated({ title: 'Compte créé', email: email.trim().toLowerCase(), password });
       setEmail('');
       setName('');
       setPassword('');
-      setAdmin(false);
       setOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Création impossible.');
@@ -118,10 +115,6 @@ function CreateForm({ onCreated }: { onCreated: (h: Handout) => void }) {
           </button>
         </span>
       </label>
-      <label className="check-row tight">
-        <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
-        <span>Administrateur (gère la musique, les comptes et le serveur)</span>
-      </label>
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -139,13 +132,15 @@ function CreateForm({ onCreated }: { onCreated: (h: Handout) => void }) {
   );
 }
 
-function UserRow({ user, self, onHandout }: { user: AdminUser; self: boolean; onHandout: (h: Handout) => void }) {
+function UserRow({ user, onHandout }: { user: AdminUser; onHandout: (h: Handout) => void }) {
   const confirm = useUI((s) => s.confirm);
 
   const run = async (action: () => Promise<AdminUsersData & { password?: string }>, done?: string) => {
     try {
       const res = await action();
-      queryClient.setQueryData(KEY, { users: res.users, signupOpen: res.signupOpen });
+      queryClient.setQueryData(KEY, { users: res.users, signupOpen: res.signupOpen, legacy: res.legacy });
+      void queryClient.invalidateQueries({ queryKey: ['console', 'sessions'] });
+      void queryClient.invalidateQueries({ queryKey: ['console', 'stats'] });
       if (done) toast(done);
       return res;
     } catch (e) {
@@ -162,7 +157,7 @@ function UserRow({ user, self, onHandout }: { user: AdminUser; self: boolean; on
       danger: true,
     });
     if (!ok) return;
-    const res = await run(() => api.post(`/api/admin/users/${user.id}/reset`));
+    const res = await run(() => api.post(`/api/console/users/${user.id}/reset`));
     if (res?.password) onHandout({ title: `Nouveau mot de passe pour ${user.name}`, email: user.email, password: res.password });
   };
 
@@ -176,20 +171,7 @@ function UserRow({ user, self, onHandout }: { user: AdminUser; self: boolean; on
       });
       if (!ok) return;
     }
-    await run(() => api.patch(`/api/admin/users/${user.id}`, { disabled: !user.disabled }), user.disabled ? 'Compte réactivé' : 'Compte désactivé');
-  };
-
-  const toggleAdmin = async () => {
-    const ok = await confirm({
-      title: user.isAdmin ? `Retirer les droits d’administrateur à ${user.name} ?` : `Rendre ${user.name} administrateur ?`,
-      message: user.isAdmin
-        ? 'Il ne pourra plus gérer la musique, les comptes ni le serveur.'
-        : 'Il pourra gérer la musique, les comptes et le serveur, comme toi.',
-      confirmLabel: user.isAdmin ? 'Retirer les droits' : 'Rendre administrateur',
-      danger: user.isAdmin,
-    });
-    if (!ok) return;
-    await run(() => api.patch(`/api/admin/users/${user.id}`, { isAdmin: !user.isAdmin }), user.isAdmin ? 'Droits retirés' : 'Nouvel administrateur');
+    await run(() => api.patch(`/api/console/users/${user.id}`, { disabled: !user.disabled }), user.disabled ? 'Compte réactivé' : 'Compte désactivé');
   };
 
   const remove = async () => {
@@ -200,7 +182,7 @@ function UserRow({ user, self, onHandout }: { user: AdminUser; self: boolean; on
       danger: true,
     });
     if (!ok) return;
-    await run(() => api.del(`/api/admin/users/${user.id}`), 'Compte supprimé');
+    await run(() => api.del(`/api/console/users/${user.id}`), 'Compte supprimé');
   };
 
   return (
@@ -211,8 +193,6 @@ function UserRow({ user, self, onHandout }: { user: AdminUser; self: boolean; on
       <div className="user-main">
         <div className="user-name">
           <strong>{user.name}</strong>
-          {self && <em className="badge">toi</em>}
-          {user.isAdmin && <em className="badge badge-accent">administrateur</em>}
           {user.disabled && <em className="badge badge-warn">désactivé</em>}
           {user.mustChange && <em className="badge">mot de passe provisoire</em>}
         </div>
@@ -222,38 +202,71 @@ function UserRow({ user, self, onHandout }: { user: AdminUser; self: boolean; on
           {user.sessionCount > 1 ? 's' : ''}
         </span>
       </div>
-      {!self && (
-        <div className="user-actions">
-          <button type="button" className="btn btn-ghost" onClick={() => void reset()} title="Mot de passe oublié">
-            <KeyRound /> Mot de passe
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => void toggleAdmin()}>
-            {user.isAdmin ? <ShieldOff /> : <Shield />} {user.isAdmin ? 'Retirer admin' : 'Rendre admin'}
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => void toggleDisabled()}>
-            {user.disabled ? <UserCheck /> : <UserX />} {user.disabled ? 'Réactiver' : 'Désactiver'}
-          </button>
-          <button type="button" className="icon-btn" aria-label={`Supprimer le compte de ${user.name}`} title="Supprimer le compte" onClick={() => void remove()}>
-            <Trash2 />
-          </button>
-        </div>
-      )}
+      <div className="user-actions">
+        <button type="button" className="btn btn-ghost" onClick={() => void reset()} title="Mot de passe oublié">
+          <KeyRound /> Mot de passe
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => void toggleDisabled()}>
+          {user.disabled ? <UserCheck /> : <UserX />} {user.disabled ? 'Réactiver' : 'Désactiver'}
+        </button>
+        <button type="button" className="icon-btn" aria-label={`Supprimer le compte de ${user.name}`} title="Supprimer le compte" onClick={() => void remove()}>
+          <Trash2 />
+        </button>
+      </div>
     </li>
   );
 }
 
-/** Administration > Comptes : inscriptions, création, mot de passe oublié, droits, suppression. */
-export function AdminUsers() {
-  const me = useUser();
-  const { data } = useQuery({ queryKey: KEY, queryFn: () => api.get<AdminUsersData>('/api/admin/users'), staleTime: 0 });
+/** Playlists et likes d'avant les comptes : à confier à un compte. */
+function LegacyCallout({ data }: { data: AdminUsersData }) {
+  const confirm = useUI((s) => s.confirm);
+  const { playlists, favorites } = data.legacy;
+  if (!playlists && !favorites) return null;
+  const give = async (u: AdminUser) => {
+    const ok = await confirm({
+      title: `Donner ces données à ${u.name} ?`,
+      message: 'Les playlists et les titres likés d’avant les comptes deviendront les siens. Cela ne se défait pas.',
+      confirmLabel: `Donner à ${u.name}`,
+    });
+    if (!ok) return;
+    try {
+      queryClient.setQueryData(KEY, await api.post<AdminUsersData>(`/api/console/users/${u.id}/adopt`));
+      toast(`Les données d’avant les comptes sont maintenant celles de ${u.name}`);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Action impossible.', 'error');
+    }
+  };
+  return (
+    <div className="callout" role="status">
+      <strong>Des données d’avant les comptes n’appartiennent à personne</strong>
+      <p>
+        {playlists} playlist{playlists > 1 ? 's' : ''} et {favorites} titre{favorites > 1 ? 's' : ''} liké{favorites > 1 ? 's' : ''}. Choisis le compte qui les reprend (le plus souvent le tien).
+      </p>
+      {data.users.length === 0 ? (
+        <p className="muted small">Crée d’abord un compte, ou ouvre le lecteur sur ce PC et crée le premier compte : il les reprendra tout seul.</p>
+      ) : (
+        <div className="setting-actions">
+          {data.users.map((u) => (
+            <button key={u.id} type="button" className="btn" onClick={() => void give(u)}>
+              Donner à {u.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Application Serveur > Comptes : inscriptions, création, mot de passe oublié, désactivation, suppression. */
+export function Accounts() {
+  const { data } = useQuery({ queryKey: KEY, queryFn: () => api.get<AdminUsersData>('/api/console/users'), staleTime: 0, refetchInterval: 8000 });
   const [handout, setHandout] = useState<Handout | null>(null);
   const [busy, setBusy] = useState(false);
 
   const setSignup = async (open: boolean) => {
     setBusy(true);
     try {
-      queryClient.setQueryData(KEY, await api.put<AdminUsersData>('/api/admin/signup', { open }));
-      void queryClient.invalidateQueries({ queryKey: ['auth'] });
+      queryClient.setQueryData(KEY, await api.put<AdminUsersData>('/api/console/signup', { open }));
       toast(open ? 'Inscriptions ouvertes' : 'Inscriptions fermées');
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Impossible de changer ce réglage.', 'error');
@@ -265,31 +278,38 @@ export function AdminUsers() {
   if (!data) return null;
 
   return (
-    <section className="setting-block" aria-labelledby="users-title">
-      <h2 id="users-title">Comptes</h2>
-      <p className="muted">
-        Chaque personne se connecte avec son adresse e-mail et son mot de passe, et garde ses propres playlists, likes et historique. La musique est commune ; seuls les administrateurs la gèrent.
-      </p>
-
-      <div className="switch-row">
-        <div>
-          <strong>Inscriptions ouvertes</strong>
-          <span className="muted small">Toute personne qui peut ouvrir l’adresse du serveur peut créer son compte. Ferme-les une fois ton entourage inscrit.</span>
+    <>
+      <section className="setting-block" aria-labelledby="signup-title">
+        <h2 id="signup-title">Inscriptions</h2>
+        <p className="muted">
+          Chaque personne se connecte avec son adresse e-mail et son mot de passe depuis le lecteur, et garde ses propres playlists, likes et historique. La musique est commune.
+        </p>
+        <div className="switch-row">
+          <div>
+            <strong>Inscriptions ouvertes</strong>
+            <span className="muted small">Toute personne qui peut ouvrir l’adresse du serveur peut créer son compte. Ferme-les une fois ton entourage inscrit.</span>
+          </div>
+          <button type="button" role="switch" aria-checked={data.signupOpen} aria-label="Inscriptions ouvertes" className={`switch ${data.signupOpen ? 'is-on' : ''}`} disabled={busy} onClick={() => void setSignup(!data.signupOpen)}>
+            <span />
+          </button>
         </div>
-        <button type="button" role="switch" aria-checked={data.signupOpen} aria-label="Inscriptions ouvertes" className={`switch ${data.signupOpen ? 'is-on' : ''}`} disabled={busy} onClick={() => void setSignup(!data.signupOpen)}>
-          <span />
-        </button>
-      </div>
+      </section>
 
-      {handout && <HandoutCard handout={handout} onClose={() => setHandout(null)} />}
-
-      <ul className="user-list">
-        {data.users.map((u) => (
-          <UserRow key={u.id} user={u} self={u.id === me?.id} onHandout={setHandout} />
-        ))}
-      </ul>
-
-      <CreateForm onCreated={setHandout} />
-    </section>
+      <section className="setting-block" aria-labelledby="users-title">
+        <h2 id="users-title">Comptes{data.users.length ? ` (${data.users.length})` : ''}</h2>
+        <LegacyCallout data={data} />
+        {handout && <HandoutCard handout={handout} onClose={() => setHandout(null)} />}
+        {data.users.length === 0 ? (
+          <p className="muted">Aucun compte pour le moment. La première personne qui ouvre le lecteur crée le sien.</p>
+        ) : (
+          <ul className="user-list">
+            {data.users.map((u) => (
+              <UserRow key={u.id} user={u} onHandout={setHandout} />
+            ))}
+          </ul>
+        )}
+        <CreateForm onCreated={setHandout} />
+      </section>
+    </>
   );
 }

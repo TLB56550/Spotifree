@@ -77,7 +77,7 @@ set OPEN_BROWSER=1
 echo.
 echo   Ma Bibliotheque demarre...
 echo   Garde cette fenetre ouverte pendant que tu ecoutes ta musique.
-echo   Pour quitter : bouton "Arreter" dans Parametres, ou ferme cette fenetre.
+echo   Pour quitter : bouton "Arreter" dans l'application Serveur, ou ferme cette fenetre.
 echo.
 
 :demarrage
@@ -108,9 +108,13 @@ root = fso.GetParentFolderName(WScript.ScriptFullName)
 sh.CurrentDirectory = root
 node = """" & root & "\\runtime\\node.exe"" --no-warnings """ & root & "\\app\\server.mjs"" "
 `;
-const playerVbs = `' Ouvre le lecteur Ma Bibliotheque. Le serveur est demarre en arriere-plan s'il ne tourne pas deja.
-' Fermer la fenetre du lecteur n'arrete pas le serveur.
+const playerVbs = `' Ouvre le lecteur Ma Bibliotheque (ecoute uniquement : il ne gere pas le serveur).
+' Le serveur est demarre en arriere-plan s'il ne tourne pas deja. Fermer le lecteur n'arrete pas le serveur.
 ${vbsHead}sh.Run node & "player", 0, False
+`;
+const serverVbs = `' Ouvre l'application Serveur Ma Bibliotheque (comptes, appareils, musique, mises a jour...).
+' Le serveur est demarre en arriere-plan s'il ne tourne pas deja. Cette application ne lit aucune musique.
+${vbsHead}sh.Run node & "console", 0, False
 `;
 const chooseVbs = `' Choisit le serveur que ce lecteur utilise (ce PC par defaut, ou un NAS plus tard).
 ${vbsHead}addr = InputBox("Adresse du serveur Ma Bibliotheque utilise par ce lecteur." & vbCrLf & vbCrLf & "Ce PC : http://127.0.0.1:4242" & vbCrLf & "Un NAS ou un autre PC : par exemple http://192.168.1.20:4242", "Ma Bibliotheque - serveur", "http://127.0.0.1:4242")
@@ -124,7 +128,7 @@ If addr <> "" Then
 End If
 `;
 fs.mkdirSync(path.join(stage, 'app', 'launchers'), { recursive: true });
-for (const [file, text] of [['Ma Bibliotheque.vbs', playerVbs], ['Choisir le serveur.vbs', chooseVbs]]) {
+for (const [file, text] of [['Ma Bibliotheque.vbs', playerVbs], ['Ma Bibliotheque Serveur.vbs', serverVbs], ['Choisir le serveur.vbs', chooseVbs]]) {
   fs.writeFileSync(path.join(stage, file), crlf(text));
   fs.writeFileSync(path.join(stage, 'app', 'launchers', file), crlf(text));
 }
@@ -155,15 +159,17 @@ robocopy "%SRC%." "%DEST%" /E /XD "code-source" /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 goto echec_copie
 
 :raccourcis
-rem 3. Raccourcis : Bureau + menu Demarrer
+rem 3. Raccourcis : Bureau + menu Demarrer (le lecteur et le serveur)
 echo   Creation des raccourcis...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $dest = $env:DEST; $icone = Join-Path $dest 'app\\icone.ico'; foreach ($dossier in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { $l = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque.lnk')); $l.TargetPath = Join-Path $env:SystemRoot 'System32\\wscript.exe'; $l.Arguments = ([char]34 + (Join-Path $dest 'Ma Bibliotheque.vbs') + [char]34); $l.WorkingDirectory = $dest; $l.WindowStyle = 1; $l.Description = 'Ma Bibliotheque'; if (Test-Path $icone) { $l.IconLocation = $icone }; $l.Save() }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $dest = $env:DEST; $icone = Join-Path $dest 'app\\icone.ico'; $iconeS = Join-Path $dest 'app\\icone-serveur.ico'; $wsh = Join-Path $env:SystemRoot 'System32\\wscript.exe'; foreach ($dossier in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { $l = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque.lnk')); $l.TargetPath = $wsh; $l.Arguments = ([char]34 + (Join-Path $dest 'Ma Bibliotheque.vbs') + [char]34); $l.WorkingDirectory = $dest; $l.WindowStyle = 1; $l.Description = 'Ma Bibliotheque - lecteur'; if (Test-Path $icone) { $l.IconLocation = $icone }; $l.Save(); $s = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque Serveur.lnk')); $s.TargetPath = $wsh; $s.Arguments = ([char]34 + (Join-Path $dest 'Ma Bibliotheque Serveur.vbs') + [char]34); $s.WorkingDirectory = $dest; $s.WindowStyle = 1; $s.Description = 'Ma Bibliotheque - serveur'; if (Test-Path $iconeS) { $s.IconLocation = $iconeS }; $s.Save() }"
 if errorlevel 1 goto echec_raccourcis
 
 echo.
 echo   C'est installe !
 echo.
-echo   - Un raccourci "Ma Bibliotheque" est sur ton bureau et dans le menu Demarrer.
+echo   - Deux raccourcis sont sur ton bureau et dans le menu Demarrer :
+echo       "Ma Bibliotheque"          = le lecteur (pour ecouter)
+echo       "Ma Bibliotheque Serveur"  = le serveur (comptes, appareils, musique)
 echo   - L'application est rangee ici : %DEST%
 echo   - Tes playlists et tes likes sont conserves (dossier %APPDATA%\\MaBibliotheque).
 echo.
@@ -208,8 +214,8 @@ cd /d "%~dp0"
 title Ma Bibliotheque - mot de passe oublie
 echo.
 echo   Mot de passe oublie : cree un mot de passe provisoire pour un compte.
-echo   (A utiliser surtout si c'est l'administrateur qui l'a oublie ;
-echo   sinon, l'administrateur peut le faire dans Administration ^> Comptes.)
+echo   (Plus simple : dans l'application "Ma Bibliotheque Serveur", page
+echo   "Comptes", bouton "Mot de passe" a cote de la personne.)
 echo.
 set /p MAIL=  Adresse e-mail du compte : 
 echo.
@@ -221,6 +227,7 @@ fs.writeFileSync(path.join(stage, 'Mot de passe oublie.bat'), crlf(resetBat));
 // Les installations mises à jour automatiquement le reçoivent aussi (copié à la racine au démarrage).
 fs.writeFileSync(path.join(stage, 'app', 'launchers', 'Mot de passe oublie.bat'), crlf(resetBat));
 fs.copyFileSync(path.join(root, 'assets', 'icone.ico'), path.join(stage, 'app', 'icone.ico'));
+fs.copyFileSync(path.join(root, 'assets', 'icone-serveur.ico'), path.join(stage, 'app', 'icone-serveur.ico'));
 
 // Paquet de mise à jour automatique : seulement le dossier « app » (le programme et l'interface, ~1 Mo).
 step('Paquet de mise à jour automatique');
@@ -233,7 +240,8 @@ const readme = `MA BIBLIOTHEQUE  -  version ${version}
 =====================================
 
 Ta musique, sur ton PC, avec une interface a la Spotify : albums, artistes,
-playlists, titres likes, file d'attente, recherche.
+playlists, titres likes, file d'attente, recherche. Deux applications :
+le LECTEUR (ecouter) et le SERVEUR (gerer : comptes, appareils, musique).
 
 
 INSTALLER (a faire une seule fois)
@@ -243,16 +251,33 @@ INSTALLER (a faire une seule fois)
    l'interieur du .zip.)
 2. Double-clique sur  "Installer Ma Bibliotheque.bat".
    Il range l'application dans  %LOCALAPPDATA%\\Programs\\Ma Bibliotheque
-   et cree un raccourci "Ma Bibliotheque" sur le bureau et dans le menu Demarrer.
+   et cree deux raccourcis sur le bureau et dans le menu Demarrer :
+   "Ma Bibliotheque" (le lecteur) et "Ma Bibliotheque Serveur".
 3. Tu peux ensuite supprimer le dossier extrait et le .zip.
 
-Pour ouvrir l'application, utilise ensuite le raccourci du bureau : c'est le
-LECTEUR. Le SERVEUR (qui garde ta bibliotheque et sert aussi le telephone)
-tourne a part, en arriere-plan, sans fenetre : le raccourci le demarre s'il ne
-tourne pas deja. Fermer la fenetre du lecteur n'arrete pas le serveur : le
-telephone continue de fonctionner. Pour arreter le serveur : "Administration" >
-"Serveur" > "Arreter le serveur". Pour qu'il demarre tout seul avec Windows :
-"Administration" > "Serveur" > "Demarrer le serveur avec Windows".
+
+DEUX APPLICATIONS : LE LECTEUR ET LE SERVEUR
+---------------------------------------------
+Deux raccourcis sont crees sur le bureau et dans le menu Demarrer :
+
+  "Ma Bibliotheque"          LE LECTEUR : il sert uniquement a ECOUTER de la
+                             musique (albums, playlists, likes, recherche...).
+  "Ma Bibliotheque Serveur"  LE SERVEUR : il sert uniquement a GERER (comptes,
+                             appareils, dossiers de musique, importation, acces
+                             depuis le telephone, mises a jour, arret). Il ne
+                             lit aucune musique.
+
+Meme connecte sur le lecteur, on ne peut rien gerer du serveur : tout se fait
+dans l'application Serveur, qui n'est ouverte que sur ce PC (jamais depuis un
+telephone ni le reseau).
+
+Le serveur (qui garde ta bibliotheque et la sert aux lecteurs, y compris celui
+du telephone) tourne en arriere-plan, sans fenetre : les deux raccourcis le
+demarrent s'il ne tourne pas deja. Fermer une fenetre, lecteur ou serveur,
+n'arrete pas le serveur : le telephone continue de fonctionner. Pour l'arreter :
+application Serveur > "Serveur" > "Arreter le serveur". Pour qu'il demarre tout
+seul avec Windows : application Serveur > "Serveur" > "Demarrer le serveur avec
+Windows".
 Plus tard, si le serveur est deplace sur un NAS : "Choisir le serveur.vbs"
 (dans le dossier d'installation) indique au lecteur ou le trouver.
 
@@ -260,9 +285,10 @@ Si Windows affiche "Windows a protege votre ordinateur" :
 clique sur "Informations complementaires" puis "Executer quand meme".
 C'est normal pour un programme qui n'a pas ete telecharge depuis le Store.
 
-Sans installer : "Ma Bibliotheque.vbs" fonctionne aussi directement depuis ce
-dossier. "Lancer Ma Bibliotheque.bat" lance le serveur dans une fenetre visible
-(utile seulement pour comprendre un probleme).
+Sans installer : "Ma Bibliotheque.vbs" (lecteur) et "Ma Bibliotheque Serveur.vbs"
+fonctionnent aussi directement depuis ce dossier. "Lancer Ma Bibliotheque.bat"
+lance le serveur dans une fenetre visible (utile seulement pour comprendre un
+probleme).
 
 
 APPARENCE
@@ -286,64 +312,64 @@ separement). "Standard" + "Neutre" = son d'origine, sans aucun traitement.
 
 COMPTES : PLUSIEURS PERSONNES, UN SEUL SERVEUR
 ----------------------------------------------
-Chaque personne se connecte avec son adresse e-mail et un mot de passe (aucun
-e-mail n'est envoye : l'adresse sert d'identifiant). Chacun garde ses
-propres playlists, likes et historique ; la musique, elle, est commune.
+Chaque personne se connecte au LECTEUR avec son adresse e-mail et un mot de
+passe (aucun e-mail n'est envoye : l'adresse sert d'identifiant). Chacun garde
+ses propres playlists, likes et historique ; la musique, elle, est commune.
+Il n'y a pas de "chef" dans le lecteur : tous les comptes sont identiques.
+La gestion se fait dans l'application SERVEUR, page "Comptes".
 
-- Premier lancement : le compte que tu crees sur le PC du serveur devient le
-  compte ADMINISTRATEUR. Tes playlists, likes et historique d'avant les
-  comptes sont rattaches a ce compte.
+- Premier lancement : ouvre le lecteur sur le PC du serveur et cree ton compte.
+  Tes playlists, likes et historique d'avant les comptes lui sont rattaches.
+  (Si ce n'est pas le bon compte qui les a reprises, la page "Comptes" du
+  serveur permet de les confier a un autre compte tant qu'elles n'ont pas ete
+  reprises.)
 - Les autres : ils creent eux-memes leur compte depuis leur telephone ou leur
   ordinateur ("Creer un compte") tant que les inscriptions sont ouvertes.
-  Une fois ton entourage inscrit, ferme-les : "Administration" > "Comptes".
-- Mot de passe oublie : l'administrateur ouvre "Administration" > "Comptes",
-  clique sur "Mot de passe" a cote de la personne : un mot de passe
-  provisoire s'affiche une seule fois, a lui transmettre. A sa prochaine
-  connexion, il choisit le sien.
-- L'administrateur peut aussi creer un compte, desactiver ou supprimer un
-  compte, et nommer d'autres administrateurs.
-- Chacun gere son compte dans "Parametres" > "Mon compte" (nom, mot de passe,
-  appareils connectes, deconnexion).
-- Seuls les administrateurs gerent le serveur : dossiers de musique,
-  importation, analyse, acces reseau, mises a jour, arret. Tout cela se trouve
-  dans la page "Administration" (colonne de gauche).
+  Une fois ton entourage inscrit, ferme-les : serveur > "Comptes".
+- Mot de passe oublie : serveur > "Comptes", bouton "Mot de passe" a cote de la
+  personne : un mot de passe provisoire s'affiche une seule fois, a lui
+  transmettre. A sa prochaine connexion, il choisit le sien.
+- Le serveur peut aussi creer un compte, desactiver ou supprimer un compte.
+- Chacun gere son propre compte dans le lecteur : "Parametres" > "Mon compte"
+  (nom, mot de passe, appareils connectes, deconnexion).
+- Les appareils connectes (tous comptes confondus) se voient et se
+  deconnectent dans serveur > "Appareils".
 
 
-IMPORTER DE LA MUSIQUE (ADMINISTRATEUR)
----------------------------------------
-Bouton "Importer des fichiers" en bas de la colonne de gauche (ou
-"Administration" > "Importer de la musique"), ou glisse des fichiers audio sur
-la fenetre. Depuis un telephone, l'administrateur trouve le meme bouton dans
-l'onglet "Bibliotheque". Les fichiers sont copies dans un dossier reserve,
-"Importations" (dans le dossier des donnees de l'application, indique dans
-"Administration"), a part de ta musique habituelle, puis ajoutes a la
-bibliotheque de tout le monde. Renvoyer le meme fichier ne cree pas de doublon.
+IMPORTER DE LA MUSIQUE (APPLICATION SERVEUR)
+--------------------------------------------
+Application Serveur > "Musique" > "Importer de la musique" : choisis des
+fichiers audio, ou glisse-les sur la fenetre. Ils sont copies dans un dossier
+reserve, "Importations" (dans le dossier des donnees de l'application, indique
+dans serveur > "Serveur"), a part de ta musique habituelle, puis ajoutes a la
+bibliotheque de tout le monde. Renvoyer le meme fichier ne cree pas de
+doublon. L'importation ne se fait plus depuis le lecteur ni le telephone.
 
 
 PREMIERE UTILISATION
 --------------------
-Au premier lancement, cree ton compte administrateur, puis choisis le
-dossier qui contient ta musique
-(par exemple C:\\Users\\TonNom\\Music). Formats lus : MP3, FLAC, M4A/AAC,
-OGG/Opus, WAV. Les pochettes sont reconnues (integrees aux fichiers, ou
-fichiers "cover.jpg" / "folder.jpg" dans le dossier de l'album).
+1. Ouvre "Ma Bibliotheque Serveur" > "Musique" et choisis le dossier qui
+   contient ta musique (par exemple C:\\Users\\TonNom\\Music). Formats lus : MP3,
+   FLAC, M4A/AAC, OGG/Opus, WAV. Les pochettes sont reconnues (integrees aux
+   fichiers, ou fichiers "cover.jpg" / "folder.jpg" dans le dossier de l'album).
+2. Ouvre "Ma Bibliotheque" (le lecteur) et cree ton compte.
 
 L'analyse se fait en arriere-plan : les premiers titres apparaissent tout de
 suite. Ensuite, les fichiers ajoutes, renommes ou supprimes sont detectes
-automatiquement. Tu peux ajouter plusieurs dossiers dans "Administration".
-Deplacer ou renommer un fichier ne fait pas perdre ses likes ni ses playlists.
+automatiquement. Tu peux ajouter plusieurs dossiers. Deplacer ou renommer un
+fichier ne fait pas perdre ses likes ni ses playlists.
 
 
 SUR UN TELEPHONE OU UN AUTRE APPAREIL
 -------------------------------------
-L'ajout d'un appareil se fait cote serveur, dans "Administration" > "Acces
-depuis d'autres appareils" (et non plus depuis le lecteur). Chaque personne
-se connecte ensuite avec son propre compte : il n'y a plus de code a saisir.
-La musique est lue depuis le serveur et rien n'est copie sur l'appareil.
+L'ajout d'un appareil se fait cote serveur, dans l'application Serveur >
+"Appareils" (et non depuis le lecteur). Chaque personne se connecte ensuite
+au lecteur avec son propre compte : il n'y a pas de code a saisir. La musique
+est lue depuis le serveur et rien n'est copie sur l'appareil.
 
-Cote serveur (une fois, par l'administrateur) :
-1. Lance Ma Bibliotheque, ouvre "Administration" > "Acces depuis d'autres
-   appareils" et active "Autoriser l'acces depuis le reseau".
+Cote serveur (une fois) :
+1. Ouvre "Ma Bibliotheque Serveur" > "Appareils" et active "Autoriser l'acces
+   depuis le reseau".
 2. Windows demande une autorisation "Pare-feu Windows Defender" pour
    node.exe : coche "Reseaux prives" puis "Autoriser l'acces".
    (Si tu as clique sur Annuler : desactive puis reactive l'acces, ou
@@ -367,22 +393,20 @@ B) Application web dans Chrome (sans installer de fichier)
    > "Ajouter a l'ecran d'accueil" (ou "Installer l'application").
 
 A savoir :
-- Le serveur doit etre allume et Ma Bibliotheque lancee.
-- Pour couper l'acces d'un appareil : la personne le deconnecte dans
-  "Parametres" > "Mon compte", ou l'administrateur desactive son compte. Pour
-  tout couper : desactive l'interrupteur "Autoriser l'acces depuis le reseau".
+- Le serveur doit etre allume (il tourne en arriere-plan).
+- Pour couper l'acces d'un appareil : serveur > "Appareils" (bouton corbeille),
+  ou la personne le deconnecte dans le lecteur ("Parametres" > "Mon compte"),
+  ou tu desactives son compte dans serveur > "Comptes". Pour tout couper :
+  desactive l'interrupteur "Autoriser l'acces depuis le reseau".
 - Hors de chez toi : installe Tailscale (gratuit, tailscale.com) sur le
   serveur et sur chaque appareil, avec le meme compte. Une adresse "Tailscale"
-  apparait alors dans "Administration" : choisis-la.
+  apparait alors dans serveur > "Appareils" : choisis-la.
   Sans Tailscale, n'ouvre pas ton PC sur Internet (pas de redirection de port).
 - Les mots de passe circulent en clair (sans chiffrement) sur ton reseau
   local tant que l'adresse commence par http://. Pour les chiffrer, utilise
   une adresse https:// : avec Tailscale, tape dans PowerShell sur le serveur :
   tailscale serve --bg 4243   puis utilise l'adresse https:// qu'il affiche.
   C'est surtout utile si le serveur est joignable depuis Internet.
-- Serveur sans ecran (NAS, Docker) : le premier compte administrateur peut
-  etre cree avec les variables MB_ADMIN_EMAIL et MB_ADMIN_PASSWORD (puis
-  MB_ADMIN_NAME, facultatif), a la place du formulaire sur le PC.
 
 
 RACCOURCIS CLAVIER
@@ -401,10 +425,13 @@ RACCOURCIS CLAVIER
 
 FERMER ET ARRETER
 -----------------
-- Fermer la fenetre : seul le lecteur se ferme (la musique jouee sur le PC
-  s'arrete), le serveur reste allume.
-- Arreter le serveur : "Administration" > "Serveur" > "Arreter le serveur".
-  Plus personne n'a alors acces a la bibliotheque.
+- Fermer la fenetre du lecteur : la musique jouee sur le PC s'arrete, le
+  serveur reste allume (le telephone continue de fonctionner).
+- Fermer la fenetre du serveur : rien ne s'arrete, c'est seulement l'ecran de
+  gestion qui se ferme.
+- Arreter le serveur : application Serveur > "Serveur" > "Arreter le serveur"
+  (ou le bouton "Arreter" de la "Vue d'ensemble"). Plus personne n'a alors
+  acces a la bibliotheque.
 Le journal du serveur est dans %APPDATA%\\MaBibliotheque\\server.log.
 
 
@@ -419,13 +446,15 @@ Mise a jour : automatique. A chaque demarrage, l'application regarde si une
 version plus recente est publiee (https://github.com/TLB56550/Spotifree/releases),
 la telecharge, verifie son empreinte, l'installe et redemarre toute seule
 (un ecran "Mise a jour" s'affiche quelques secondes). Rien a faire. Si
-internet n'est pas disponible, elle demarre normalement. "Parametres" >
-"Application" permet de verifier a la main.
+internet n'est pas disponible, elle demarre normalement. Application Serveur >
+"Serveur" > "Rechercher une mise a jour" permet de verifier a la main. Le
+lecteur et le serveur se mettent a jour ensemble ; les deux raccourcis sont
+crees (ou mis a jour) automatiquement par la mise a jour.
 Mise a jour manuelle (en secours) : extrais la nouvelle version et relance son
 installateur : il remplace l'ancienne version, tes playlists et tes likes sont
 gardes.
 Pour tout effacer : supprime  %LOCALAPPDATA%\\Programs\\Ma Bibliotheque,
-les deux raccourcis, et le dossier %APPDATA%\\MaBibliotheque.
+les deux raccourcis (lecteur et serveur), et le dossier %APPDATA%\\MaBibliotheque.
 
 
 CONFIDENTIALITE
@@ -434,8 +463,10 @@ Par defaut, l'application n'est joignable que depuis ce PC (adresse
 127.0.0.1) : personne d'autre sur ton reseau ni sur Internet ne peut y
 acceder, et elle n'envoie rien nulle part. Windows ne demande alors aucune
 autorisation pare-feu.
-Si tu actives "Autoriser l'acces depuis le reseau", elle devient joignable
-depuis ton reseau local, mais seulement par les personnes qui ont un compte.
+Si tu actives "Autoriser l'acces depuis le reseau", le LECTEUR devient
+joignable depuis ton reseau local, mais seulement par les personnes qui ont un
+compte. L'application SERVEUR, elle, reste toujours limitee a ce PC (port
+4244) : elle n'est jamais ouverte au reseau, quoi que tu choisisses.
 Les mots de passe sont stockes brouilles (jamais en clair) et les essais de
 connexion sont limites. Toute personne qui peut ouvrir l'adresse peut creer
 un compte tant que les inscriptions sont ouvertes : ferme-les ensuite.
@@ -443,22 +474,23 @@ un compte tant que les inscriptions sont ouvertes : ferme-les ensuite.
 
 EN CAS DE PROBLEME
 ------------------
-- Si le serveur est deja lance, le raccourci rouvre simplement la fenetre du
-  lecteur. Si un probleme persiste, regarde le journal du serveur (voir plus
+- Si le serveur est deja lance, un raccourci ouvre simplement sa fenetre. Si un probleme persiste, regarde le journal du serveur (voir plus
   haut). Si le message "Le port 4242 est deja utilise par un autre programme"
   apparait, un autre logiciel occupe ce port : ferme-le (ou redemarre le PC).
 - Une chanson ne se lit pas : verifie qu'elle s'ouvre dans un autre lecteur ;
-  les fichiers abimes sont ignores et comptes dans "Administration" > Analyse.
+  les fichiers abimes sont ignores et comptes dans serveur > "Musique" > Analyse.
 - Ta musique est sur un disque externe ou reseau absent : les titres restent
   dans la bibliotheque et redeviennent lisibles quand le disque est rebranche.
 - Le telephone n'arrive pas a joindre le serveur : verifie le meme Wi-Fi (pas
   le "reseau invite" de la box), l'autorisation du pare-feu (etape 2), et que
-  l'adresse affichee dans "Administration" est bien celle de ton reseau.
-- Mot de passe oublie : demande a l'administrateur de le reinitialiser
-  ("Administration" > "Comptes"). Si c'est l'administrateur lui-meme qui l'a
-  oublie : double-clique sur "Mot de passe oublie.bat" (dans le dossier
-  d'installation), saisis son adresse e-mail : un mot de passe provisoire
-  s'affiche.
+  l'adresse affichee dans serveur > "Appareils" est bien celle de ton reseau.
+- Mot de passe oublie : application Serveur > "Comptes" > "Mot de passe" a
+  cote de la personne. Si l'application Serveur est inaccessible :
+  double-clique sur "Mot de passe oublie.bat" (dans le dossier d'installation),
+  saisis l'adresse e-mail du compte : un mot de passe provisoire s'affiche.
+- Le lecteur ou le serveur ne s'ouvre pas : relance le raccourci ; si rien ne
+  s'affiche, ouvre http://127.0.0.1:4242 (lecteur) ou http://127.0.0.1:4244
+  (serveur) dans Edge ou Chrome, et regarde le journal du serveur.
 - Rien ne s'affiche : lance le .bat et lis le message dans la fenetre noire.
 
 

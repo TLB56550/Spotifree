@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Loader2, Upload } from 'lucide-react';
-import { useUploads, type UploadItem } from '../store/uploads';
+import { useUploads, type UploadItem } from './uploads';
 
 const ACCEPT = 'audio/*,.mp3,.flac,.m4a,.aac,.ogg,.oga,.opus,.wav';
 
-/** Bouton « Envoyer vers le serveur » : ouvre le sélecteur de fichiers du téléphone. */
-export function UploadPicker({ variant }: { variant: 'row' | 'button' | 'nav' }) {
+/** Bouton « Choisir des fichiers » : ouvre le sélecteur de fichiers de Windows. */
+export function UploadPicker() {
   const input = useRef<HTMLInputElement>(null);
   const add = useUploads((s) => s.add);
-  const open = () => input.current?.click();
   return (
     <>
       <input
@@ -22,26 +21,9 @@ export function UploadPicker({ variant }: { variant: 'row' | 'button' | 'nav' })
           e.target.value = '';
         }}
       />
-      {variant === 'nav' ? (
-        <button type="button" className="nav-item nav-button" onClick={open}>
-          <Upload />
-          <span>Importer des fichiers</span>
-        </button>
-      ) : variant === 'row' ? (
-        <button type="button" className="lib-row lib-new" onClick={open}>
-          <span className="lib-cover lib-plus">
-            <Upload aria-hidden />
-          </span>
-          <span className="lib-text">
-            <span className="lib-title">Envoyer de la musique vers le serveur</span>
-            <span className="lib-sub">Choisis des fichiers audio de cet appareil</span>
-          </span>
-        </button>
-      ) : (
-        <button type="button" className="btn" onClick={open}>
-          <Upload /> Choisir des fichiers
-        </button>
-      )}
+      <button type="button" className="btn btn-primary" onClick={() => input.current?.click()}>
+        <Upload /> Choisir des fichiers…
+      </button>
     </>
   );
 }
@@ -59,13 +41,13 @@ function status(it: UploadItem): string {
     case 'done':
       return 'Ajouté';
     case 'duplicate':
-      return 'Déjà sur le serveur';
+      return 'Déjà importé';
     default:
       return it.error ?? 'Échec';
   }
 }
 
-/** Liste des envois en cours et terminés. */
+/** Liste des importations en cours et terminées. */
 export function UploadList() {
   const items = useUploads((s) => s.items);
   const clear = useUploads((s) => s.clearFinished);
@@ -102,9 +84,8 @@ export function UploadList() {
   );
 }
 
-/** Pour l'administrateur : liste flottante des importations, avec glisser-déposer de fichiers sur la fenêtre. */
-export function UploadFloat() {
-  const items = useUploads((s) => s.items);
+/** Glisser-déposer : des fichiers audio lâchés n'importe où sur la fenêtre sont importés. */
+export function DropHint() {
   const add = useUploads((s) => s.add);
   const [over, setOver] = useState(false);
   useEffect(() => {
@@ -142,38 +123,27 @@ export function UploadFloat() {
       window.removeEventListener('drop', drop);
     };
   }, [add]);
+  if (!over) return null;
   return (
-    <>
-      {over && (
-        <div className="drop-hint" aria-hidden>
-          <Upload />
-          <span>Dépose tes fichiers audio pour les importer</span>
-        </div>
-      )}
-      {items.length > 0 && (
-        <div className="upload-float" role="status">
-          <UploadList />
-        </div>
-      )}
-    </>
+    <div className="drop-hint" aria-hidden>
+      <Upload />
+      <span>Dépose tes fichiers audio pour les importer</span>
+    </div>
   );
 }
 
-/** Bandeau au-dessus du lecteur pendant qu'un envoi est en cours. */
-export function UploadBanner() {
+/** Pastille dans la barre latérale pendant qu'une importation est en cours. */
+export function UploadPill() {
   const items = useUploads((s) => s.items);
   const active = items.filter((it) => it.status === 'waiting' || it.status === 'sending');
   if (!active.length) return null;
   const current = active.find((it) => it.status === 'sending') ?? active[0]!;
   const pct = current.size ? Math.round((current.loaded / current.size) * 100) : 0;
   return (
-    <div className="upload-banner" role="status">
-      <Upload aria-hidden />
+    <div className="c-upload-pill" role="status">
+      <Loader2 className="spin" aria-hidden />
       <span>
-        Envoi vers le serveur · {active.length > 1 ? `${active.length} fichiers` : '1 fichier'} · {pct} %
-      </span>
-      <span className="upload-banner-bar" aria-hidden>
-        <span style={{ width: `${pct}%` }} />
+        Importation · {active.length > 1 ? `${active.length} fichiers` : '1 fichier'} · {pct} %
       </span>
     </div>
   );

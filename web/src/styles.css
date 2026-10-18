@@ -3546,3 +3546,209 @@ kbd {
 .is-mobile .user-actions {
   width: 100%;
 }
+
+/* ------------------------------------------------------------------ application « Serveur » (console.html) */
+.c-app {
+  --ok: #4cc38a;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+}
+.c-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 10px 12px;
+  min-height: 0;
+}
+.c-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 8px 6px;
+}
+.c-brand > div {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  min-width: 0;
+}
+.c-mark {
+  width: 34px;
+  height: 34px;
+}
+.c-brand-sub {
+  margin-top: 3px;
+  color: var(--accent);
+  font: 700 13px var(--font-display);
+  letter-spacing: 0.01em;
+}
+.c-rail .nav-item {
+  height: 44px;
+}
+.c-rail .nav-item.is-active {
+  background: var(--raised);
+}
+.c-rail-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px;
+}
+.c-upload-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: 13px;
+}
+.c-upload-pill svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  flex: none;
+}
+.c-main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.c-main .conn-banner {
+  margin: 12px 16px 0;
+}
+.c-page {
+  max-width: 880px;
+  padding: 34px 40px 48px;
+}
+.c-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.c-head h1 {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.c-head .muted {
+  margin-top: 4px;
+}
+.c-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.c-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.c-dot.is-off {
+  background: var(--faint);
+  box-shadow: none;
+}
+.c-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.c-block h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+.c-page > .callout {
+  margin-top: 12px;
+}
+.stats .c-stat-link {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--raised);
+  transition: background 0.12s;
+}
+.stats .c-stat-link:hover {
+  background: var(--raised-2);
+}
+.c-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--raised);
+}
+.c-line > span:nth-child(2) {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.c-foot {
+  padding-top: 8px;
+}
+.c-devices li {
+  padding-right: 6px;
+}
+.c-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+.c-paths dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.c-paths dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.c-stopped {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+.c-stopped .c-mark {
+  width: 84px;
+  height: 84px;
+}
+.c-stopped p {
+  max-width: 44ch;
+}
+@media (max-width: 860px) {
+  .c-app {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+  .c-brand > div,
+  .c-rail .nav-item span,
+  .c-rail-foot,
+  .c-rail .nav-item + .nav-item span {
+    display: none;
+  }
+  .c-rail .nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+  .c-page {
+    padding: 24px 20px 40px;
+  }
+}

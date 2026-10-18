@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { invalidateLibrary } from '../lib/queryClient';
-import { useConnection } from './connection';
-import { toast } from './ui';
+import { queryClient } from '../lib/queryClient';
+import { useConnection } from '../store/connection';
+import { toast } from '../store/ui';
 
 export interface UploadItem {
   id: number;
@@ -26,11 +26,11 @@ function patch(id: number, change: Partial<UploadItem>): void {
   useUploads.setState((s) => ({ items: s.items.map((it) => (it.id === id ? { ...it, ...change } : it)) }));
 }
 
-/** Envoie un fichier vers le serveur ; la progression vient de XMLHttpRequest (fetch ne la fournit pas). */
+/** Copie un fichier dans le dossier d'importation du serveur ; la progression vient de XMLHttpRequest (fetch ne la fournit pas). */
 function send(item: UploadItem, file: File): Promise<void> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/upload?name=${encodeURIComponent(item.name)}`);
+    xhr.open('POST', `/api/console/upload?name=${encodeURIComponent(item.name)}`);
     xhr.setRequestHeader('x-mb', '1');
     xhr.setRequestHeader('content-type', 'application/octet-stream');
     xhr.upload.onprogress = (e) => {
@@ -38,10 +38,6 @@ function send(item: UploadItem, file: File): Promise<void> {
     };
     xhr.onload = () => {
       useConnection.getState().setOffline(false);
-      if (xhr.status === 401) {
-        window.location.replace('/');
-        return resolve();
-      }
       let body: { duplicate?: boolean; error?: string } = {};
       try {
         body = JSON.parse(xhr.responseText) as typeof body;
@@ -82,7 +78,7 @@ async function work(): Promise<void> {
       const done = useUploads.getState().items.find((it) => it.id === item.id);
       if (done?.status === 'error') failed++;
       else sent++;
-      if (done?.status === 'done') void invalidateLibrary();
+      if (done?.status === 'done') void queryClient.invalidateQueries({ queryKey: ['console'] });
     }
   } finally {
     working = false;

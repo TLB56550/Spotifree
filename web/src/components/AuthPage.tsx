@@ -107,12 +107,12 @@ function SignIn() {
       <button type="submit" className="btn btn-primary" disabled={busy || !email || !password}>
         {busy && <Loader2 className="spin" />} Se connecter
       </button>
-      <p className="muted small">Mot de passe oublié ? Demande à l’administrateur de le réinitialiser.</p>
+      <p className="muted small">Mot de passe oublié ? Demande à la personne qui gère le serveur de le réinitialiser.</p>
     </form>
   );
 }
 
-function SignUp({ admin }: { admin: boolean }) {
+function SignUp() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -147,7 +147,7 @@ function SignUp({ admin }: { admin: boolean }) {
         <span>Adresse e-mail</span>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required maxLength={254} />
       </label>
-      <PasswordField label="Mot de passe" value={password} onChange={setPassword} autoComplete="new-password" hint="8 caractères minimum. Aucun e-mail n’est envoyé : si tu l’oublies, l’administrateur peut le réinitialiser." />
+      <PasswordField label="Mot de passe" value={password} onChange={setPassword} autoComplete="new-password" hint="8 caractères minimum. Aucun e-mail n’est envoyé : si tu l’oublies, la personne qui gère le serveur peut le réinitialiser." />
       <PasswordField label="Confirme le mot de passe" value={again} onChange={setAgain} autoComplete="new-password" />
       {error && (
         <p className="form-error" role="alert">
@@ -155,7 +155,7 @@ function SignUp({ admin }: { admin: boolean }) {
         </p>
       )}
       <button type="submit" className="btn btn-primary" disabled={busy || !email || !password || !again}>
-        {busy && <Loader2 className="spin" />} {admin ? 'Créer le compte administrateur' : 'Créer mon compte'}
+        {busy && <Loader2 className="spin" />} Créer mon compte
       </button>
     </form>
   );
@@ -172,28 +172,15 @@ function ServerLink() {
 
 function AuthPage({ state }: { state: AuthState }) {
   const [tab, setTab] = useState<'in' | 'up'>('in');
-  const { refetch } = useAuth();
 
   if (!state.hasUsers) {
-    if (state.canSetup) {
-      return (
-        <Frame>
-          <h1>Bienvenue</h1>
-          <p className="muted">
-            Crée le compte administrateur de ce serveur. Il choisira la musique, gérera les comptes de tes proches et l’accès depuis les autres appareils.
-          </p>
-          <SignUp admin />
-        </Frame>
-      );
-    }
     return (
       <Frame>
-        <h1>Serveur pas encore configuré</h1>
-        <p className="muted">Le compte administrateur se crée depuis l’ordinateur qui héberge Ma Bibliothèque. Ouvre l’application sur cet ordinateur, puis reviens ici.</p>
-        <button type="button" className="btn" onClick={() => void refetch()}>
-          Réessayer
-        </button>
-        <ServerLink />
+        <h1>Bienvenue</h1>
+        <p className="muted">
+          Personne n’a encore de compte. Crée le premier : si tu utilises ce PC pour le serveur, il reprend tes playlists et tes likes d’avant les comptes.
+        </p>
+        <SignUp />
       </Frame>
     );
   }
@@ -212,15 +199,15 @@ function AuthPage({ state }: { state: AuthState }) {
           </button>
         </div>
       ) : (
-        <p className="muted">Les inscriptions sont fermées : demande un compte à l’administrateur.</p>
+        <p className="muted">Les inscriptions sont fermées : demande un compte à la personne qui gère le serveur.</p>
       )}
-      {tab === 'in' || !signup ? <SignIn /> : <SignUp admin={false} />}
+      {tab === 'in' || !signup ? <SignIn /> : <SignUp />}
       <ServerLink />
     </Frame>
   );
 }
 
-/** Mot de passe provisoire donné par l'administrateur : à remplacer avant d'aller plus loin. */
+/** Mot de passe provisoire donné depuis l'application Serveur : à remplacer avant d'aller plus loin. */
 function ForcePassword({ name }: { name: string }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -249,7 +236,7 @@ function ForcePassword({ name }: { name: string }) {
     <Frame>
       <h1>Choisis ton mot de passe</h1>
       <p className="muted">
-        {name}, l’administrateur t’a donné un mot de passe provisoire. Remplace-le par le tien pour continuer.
+        {name}, un mot de passe provisoire t’a été donné. Remplace-le par le tien pour continuer.
       </p>
       <form className="auth-form" onSubmit={(e) => void submit(e)}>
         <PasswordField label="Mot de passe provisoire" value={current} onChange={setCurrent} autoComplete="current-password" autoFocus />
@@ -281,7 +268,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(AUTH_LOST_EVENT, again);
   }, [refetch]);
 
-  // Plus personne de connecté (session retirée par l'administrateur…) : la musique s'arrête.
+  // Plus personne de connecté (session retirée depuis l'application Serveur…) : la musique s'arrête.
   const signedOut = Boolean(data) && !data!.user;
   useEffect(() => {
     if (signedOut) audio.pause();

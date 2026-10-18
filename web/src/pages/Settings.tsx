@@ -1,12 +1,9 @@
-import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ServerCog } from 'lucide-react';
 import type { Stats } from '@shared/types';
 import { api } from '../lib/api';
-import { useIsAdmin } from '../lib/auth';
 import { formatTotal } from '../lib/format';
 import { useIsMobile } from '../hooks/useMobile';
-import { useSettings } from '../components/Folders';
+import { useAbout } from '../lib/about';
 import { Account } from '../components/Account';
 import { Appearance } from '../components/Appearance';
 import { SoundSettings } from '../components/SoundPanel';
@@ -25,11 +22,10 @@ const SHORTCUTS: [string, string][] = [
   ['/', 'Aller à la recherche'],
 ];
 
-/** Réglages personnels : apparence, son, compte. Le serveur se gère dans « Administration ». */
+/** Réglages personnels : apparence, son, compte. Le serveur se gère dans l'application « Ma Bibliothèque Serveur ». */
 export default function SettingsPage() {
-  const { data: settings } = useSettings();
+  const { data: about } = useAbout();
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: () => api.get<Stats>('/api/stats') });
-  const admin = useIsAdmin();
   const mobile = useIsMobile();
 
   return (
@@ -61,18 +57,6 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {admin && (
-        <section className="setting-block">
-          <h2>Serveur</h2>
-          <p className="muted">Comptes, accès depuis les autres appareils, dossiers de musique, importation, mises à jour.</p>
-          <div className="setting-actions">
-            <Link to="/admin" className="btn btn-primary">
-              <ServerCog /> Ouvrir l’administration
-            </Link>
-          </div>
-        </section>
-      )}
-
       {!mobile && (
         <section className="setting-block shortcuts-block">
           <h2>Raccourcis clavier</h2>
@@ -89,7 +73,7 @@ export default function SettingsPage() {
 
       <section className="setting-block">
         <h2>Application</h2>
-        <p className="muted">Version {settings?.version ?? '…'}</p>
+        <p className="muted">Version {about?.version ?? '…'}</p>
         {isNativeApp() && (
           <div className="setting-actions">
             <button type="button" className="btn" onClick={changeNativeServer}>
