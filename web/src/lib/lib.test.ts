@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Track } from '@shared/types';
 import { formatTime, formatTotal, greeting, normalize } from './format';
 import { identityOrder, moveItem, shuffledOrder } from './queue';
+import { audioQuality } from './quality';
 import { sortTracks } from './sort';
 
 describe('queue', () => {
@@ -54,7 +55,7 @@ describe('format', () => {
 describe('sortTracks', () => {
   const t = (id: number, title: string, duration: number, addedAt: number): Track => ({
     id, title, artist: 'A', album: 'B', albumId: 1, artistId: 1, albumArtist: 'A', trackNo: id, discNo: 1,
-    year: null, genre: null, duration, cover: null, format: 'MP3', addedAt, playCount: 0,
+    year: null, genre: null, duration, cover: null, format: 'MP3', bitrate: 320, addedAt, playCount: 0,
   });
   const list = [t(1, 'Zèbre', 100, 3), t(2, 'abeille', 300, 1), t(3, 'Éléphant', 200, 2), t(4, 'piste 10', 50, 4), t(5, 'piste 2', 60, 5)];
   it('trie les titres en ignorant accents et casse, chiffres dans l’ordre naturel', () => {
@@ -69,5 +70,28 @@ describe('sortTracks', () => {
     const copy = list.slice();
     sortTracks(list, 'duration', 'asc');
     expect(list).toEqual(copy);
+  });
+});
+
+describe('audioQuality', () => {
+  it('classe les fichiers selon leur débit', () => {
+    expect(audioQuality('FLAC', 900).level).toBe('lossless');
+    expect(audioQuality('WAV', 1411).level).toBe('lossless');
+    expect(audioQuality('MP3', 320).level).toBe('high');
+    expect(audioQuality('MP3', 256).level).toBe('high');
+    expect(audioQuality('MP3', 192).level).toBe('good');
+    expect(audioQuality('MP3', 160).level).toBe('low');
+    expect(audioQuality('MP3', 128).level).toBe('low');
+    expect(audioQuality('MP3', 96).level).toBe('poor');
+  });
+  it('est plus indulgent avec les codecs récents et reconnaît l\'ALAC', () => {
+    expect(audioQuality('M4A', 192).level).toBe('high');
+    expect(audioQuality('OPUS', 96).level).toBe('low');
+    expect(audioQuality('M4A', 900).level).toBe('lossless');
+  });
+  it('gère un débit inconnu et écrit le texte affiché', () => {
+    expect(audioQuality('MP3', null).level).toBe('unknown');
+    expect(audioQuality('MP3', null).text).toBe('MP3');
+    expect(audioQuality('mp3', 319.6).text).toBe('MP3 · 320 kbit/s');
   });
 });

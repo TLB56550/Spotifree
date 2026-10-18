@@ -19,7 +19,7 @@ type Params = (string | number | null)[];
 
 const TRACK_COLS = `t.id, t.title, t.artist, t.album_id AS albumId, al.title AS album, t.artist_id AS artistId,
   ar.name AS albumArtist, t.track_no AS trackNo, t.disc_no AS discNo, t.year, t.genre, t.duration,
-  COALESCE(t.cover_key, al.cover_key) AS cover, t.format, t.added_at AS addedAt, COALESCE(ut.play_count, 0) AS playCount`;
+  COALESCE(t.cover_key, al.cover_key) AS cover, t.format, t.bitrate, t.added_at AS addedAt, COALESCE(ut.play_count, 0) AS playCount`;
 /** Les écoutes sont propres à chaque personne : `uid` est un entier issu de la base (jamais une saisie). */
 const trackFrom = (uid: number) =>
   `FROM tracks t JOIN albums al ON al.id = t.album_id JOIN artists ar ON ar.id = t.artist_id

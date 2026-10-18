@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { formatTime } from '../lib/format';
+import { QualityBadge } from './QualityBadge';
 import { usePlayer } from '../store/player';
 import { useUI } from '../store/ui';
 import { Cover } from './Cover';
@@ -80,6 +81,7 @@ export function PlayerBar() {
               <Link className="player-artist" to={`/artist/${current.artistId}`}>
                 {current.artist}
               </Link>
+              <QualityBadge format={current.format} bitrate={current.bitrate} />
             </div>
             <LikeButton trackId={current.id} />
           </>

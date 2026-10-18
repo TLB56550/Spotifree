@@ -18,6 +18,8 @@ export interface Track {
   /** Clé de la pochette (voir /api/cover/:key) ou null. */
   cover: string | null;
   format: string;
+  /** Débit binaire moyen du fichier en kbit/s (null si inconnu). */
+  bitrate: number | null;
   addedAt: number;
   playCount: number;
 }

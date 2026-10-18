@@ -42,6 +42,7 @@ const track = (id: number): Track => ({
   duration: 200,
   cover: null,
   format: 'MP3',
+  bitrate: 320,
   addedAt: 0,
   playCount: 0,
 });

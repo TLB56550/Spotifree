@@ -3752,3 +3752,61 @@ kbd {
     padding: 24px 20px 40px;
   }
 }
+
+/* ------------------------------------------------------------------ qualité du fichier (débit binaire) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.quality {
+  --q: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--q);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.quality-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--q);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--q) 22%, transparent);
+}
+.quality-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-lossless,
+.q-high {
+  --q: #46d985;
+}
+.q-good {
+  --q: #b9dc4b;
+}
+.q-low {
+  --q: #ffa13d;
+}
+.q-poor {
+  --q: #ff5f52;
+}
+.q-unknown {
+  --q: var(--faint);
+}
+.np-quality {
+  margin-top: 4px;
+  align-self: flex-start;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+}

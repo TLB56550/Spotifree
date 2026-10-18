@@ -240,6 +240,8 @@ try {
   assert.ok(mystere, 'titre déduit du nom de fichier');
   assert.equal(mystere.artist, 'Artiste inconnu');
   ok('Fichier sans étiquettes : titre déduit du nom de fichier');
+  assert.ok(allTracks.filter((t) => t.format === 'MP3').every((t) => Number.isInteger(t.bitrate) && t.bitrate >= 32 && t.bitrate <= 320), 'débit binaire des MP3 fourni (kbit/s)');
+  ok('Débit binaire (kbit/s) fourni pour chaque titre');
 
   console.log('Recherche');
   assert.ok((await get('/api/search?q=beyonce')).json.artists.some((a) => a.name === 'Beyoncé'));

@@ -4,6 +4,7 @@ import { ChevronDown, Home, Library, ListMusic, MoreHorizontal, Pause, Play, Rep
 import { coverUrl } from '../lib/api';
 import { useDominantColor } from '../lib/color';
 import { formatTime } from '../lib/format';
+import { QualityBadge } from './QualityBadge';
 import { openBelow, useMenus } from '../hooks/useMenus';
 import { usePlayer } from '../store/player';
 import { Cover } from './Cover';
@@ -174,6 +175,7 @@ export function NowPlaying() {
               <Link to={`/artist/${current.artistId}`} className="np-artist">
                 {current.artist}
               </Link>
+              <QualityBadge format={current.format} bitrate={current.bitrate} className="np-quality" />
             </div>
             <LikeButton trackId={current.id} className="np-like" />
           </div>
