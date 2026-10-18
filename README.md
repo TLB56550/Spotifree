@@ -1,6 +1,6 @@
 # Spotifree
 
-Ma bibliothèque musicale personnelle.
+Ta musique, sur ton PC, avec une interface à la Spotify. Deux applications Windows : le **lecteur** (écouter) et le **serveur** (comptes, appareils, musique).
 
 - **PC** : un serveur (Node.js) qui lit les fichiers musicaux de ton PC, et une interface web inspirée de Spotify
   (`server/`, `web/`, `shared/`). `npm run package` fabrique le dossier à installer sous Windows.

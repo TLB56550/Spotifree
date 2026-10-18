@@ -9,7 +9,7 @@ export const useServerState = create<{ stopped: boolean }>(() => ({ stopped: fal
 export async function shutdownServer(): Promise<void> {
   const ok = await useUI.getState().confirm({
     title: 'Arrêter le serveur ?',
-    message: 'La musique s’arrêtera pour tout le monde, sur tous les appareils. Tu pourras le relancer avec « Ma Bibliotheque Serveur » ou « Ma Bibliotheque ».',
+    message: 'La musique s’arrêtera pour tout le monde, sur tous les appareils. Tu pourras le relancer avec « Spotifree Serveur » ou « Spotifree ».',
     confirmLabel: 'Arrêter le serveur',
     danger: true,
   });

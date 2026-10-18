@@ -44,7 +44,7 @@ function Stopped() {
     <div className="c-stopped">
       <Vinyl />
       <h1>Le serveur est arrêté</h1>
-      <p className="muted">Tu peux fermer cette fenêtre. Pour le relancer, ouvre « Ma Bibliotheque Serveur » ou « Ma Bibliotheque » (raccourcis du bureau).</p>
+      <p className="muted">Tu peux fermer cette fenêtre. Pour le relancer, ouvre « Spotifree Serveur » ou « Spotifree » (raccourcis du bureau).</p>
     </div>
   );
 }
@@ -61,7 +61,7 @@ export default function ConsoleApp() {
         <div className="c-brand">
           <Vinyl />
           <div>
-            <span className="brand-name">Ma Bibliothèque</span>
+            <span className="brand-name">Spotifree</span>
             <span className="c-brand-sub">Serveur</span>
           </div>
         </div>

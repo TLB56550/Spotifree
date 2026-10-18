@@ -45,7 +45,7 @@ function Onboarding() {
         <p>La musique est en cours d’analyse sur le serveur. Les premiers titres apparaissent dans quelques instants.</p>
       ) : about?.local ? (
         <p>
-          Aucun titre n’a encore été ajouté. Ouvre l’application <strong>Ma Bibliothèque Serveur</strong> (raccourci du bureau) : choisis le dossier qui contient ta musique, elle apparaîtra ici.
+          Aucun titre n’a encore été ajouté. Ouvre l’application <strong>Spotifree Serveur</strong> (raccourci du bureau) : choisis le dossier qui contient ta musique, elle apparaîtra ici.
         </p>
       ) : (
         <p>Aucun titre n’a encore été ajouté. La personne qui gère le serveur doit d’abord choisir le dossier de musique : reviens un peu plus tard.</p>

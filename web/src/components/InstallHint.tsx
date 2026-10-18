@@ -67,7 +67,7 @@ export function InstallHint() {
         <strong>Installe l’application</strong>
         <p>
           {deferred
-            ? 'Ajoute Ma Bibliothèque à ton écran d’accueil pour l’ouvrir comme une vraie application.'
+            ? 'Ajoute Spotifree à ton écran d’accueil pour l’ouvrir comme une vraie application.'
             : 'Dans le menu ⋮ de Chrome, choisis « Ajouter à l’écran d’accueil » (ou « Installer l’application »).'}
         </p>
         {deferred && (

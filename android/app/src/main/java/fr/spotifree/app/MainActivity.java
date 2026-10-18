@@ -41,7 +41,7 @@ import java.lang.ref.WeakReference;
 import java.util.Locale;
 
 /**
- * Spotifree : une coque Android autour de l'application « Ma Bibliothèque » qui tourne sur le PC.
+ * Spotifree : une coque Android autour de l'application Spotifree qui tourne sur le PC.
  * L'adresse du PC est demandée une fois, puis l'interface s'affiche dans une WebView.
  * La lecture continue en arrière-plan grâce à PlaybackService (notification et écran verrouillé).
  */
@@ -249,7 +249,7 @@ public class MainActivity extends Activity {
 
         col.addView(text(
                 "Où trouver cette adresse ?\n"
-                        + "Sur le serveur, ouvre Ma Bibliothèque, puis Administration > Accès depuis d'autres appareils. Choisis l'adresse « Tailscale » : "
+                        + "Sur le PC, ouvre Spotifree Serveur, puis Appareils > Ajouter un téléphone ou un autre appareil. Choisis l'adresse « Tailscale » : "
                         + "elle commence par 100. (le port 4243 est ajouté tout seul). "
                         + "Avec « tailscale serve », tu peux aussi saisir l'adresse https:// complète.\n\n"
                         + "Le téléphone et le serveur doivent tous les deux avoir Tailscale activé. "
@@ -293,8 +293,8 @@ public class MainActivity extends Activity {
         col.addView(text(detail, 15, ERROR, false, Gravity.START), stack(12));
         col.addView(text(
                 "Vérifie que :\n"
-                        + "• le PC est allumé et Ma Bibliothèque est lancée (version 0.3.0 ou plus) ;\n"
-                        + "• « Autoriser l'accès depuis mon téléphone » est activé dans Paramètres > Téléphone ;\n"
+                        + "• le PC est allumé et Spotifree est lancé (version 0.9 ou plus) ;\n"
+                        + "• l'accès depuis les autres appareils est activé dans Spotifree Serveur > Appareils ;\n"
                         + "• Tailscale est activé sur ton téléphone et sur ton PC ;\n"
                         + "• l'adresse est correcte :\n" + serverUrl,
                 15, MUTED, false, Gravity.START), stack(16));

@@ -25,7 +25,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    // Le serveur est éteint, hors de portée, ou Ma Bibliothèque n'est pas lancée.
+    // Le serveur est éteint, hors de portée, ou Spotifree n'est pas lancée.
     useConnection.getState().setOffline(true);
     throw new ApiError('Impossible de joindre le serveur.', 0);
   }

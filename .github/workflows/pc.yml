@@ -56,9 +56,9 @@ jobs:
             exit 0
           fi
           gh release create "$TAG" \
-            "release/Ma-Bibliotheque-$VERSION.zip" \
+            "release/Spotifree-$VERSION.zip" \
             release/Ma-Bibliotheque-app.tar.gz \
             release/Ma-Bibliotheque-app.tar.gz.sha256 \
-            --title "Ma Bibliothèque $VERSION (PC)" \
+            --title "Spotifree $VERSION (PC)" \
             --notes "Version PC $VERSION. Le zip sert à la première installation ; les installations existantes se mettent à jour toutes seules au démarrage." \
             --latest=false

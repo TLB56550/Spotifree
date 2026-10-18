@@ -68,7 +68,9 @@ export function installedDirs(): { root: string; appDir: string } | null {
 
 // ---------------------------------------------------------------- démarrage avec Windows
 
-const AUTOSTART_NAME = 'Ma Bibliotheque (serveur).vbs';
+const AUTOSTART_NAME = 'Spotifree (serveur).vbs';
+/** Ancien nom du script (l'application s'appelait « Ma Bibliotheque ») : retiré et remplacé au premier démarrage. */
+const OLD_AUTOSTART_NAME = 'Ma Bibliotheque (serveur).vbs';
 
 function startupDir(): string | null {
   if (process.env.MB_STARTUP_DIR) return process.env.MB_STARTUP_DIR;
@@ -80,7 +82,7 @@ function startupDir(): string | null {
 export function autostartStatus(): { available: boolean; enabled: boolean } {
   const dir = startupDir();
   const available = Boolean(dir && installedDirs());
-  return { available, enabled: available && fs.existsSync(path.join(dir!, AUTOSTART_NAME)) };
+  return { available, enabled: available && (fs.existsSync(path.join(dir!, AUTOSTART_NAME)) || fs.existsSync(path.join(dir!, OLD_AUTOSTART_NAME))) };
 }
 
 /** Active ou coupe le démarrage du serveur (en arrière-plan) à l'ouverture de session Windows. */
@@ -89,12 +91,13 @@ export async function setAutostart(on: boolean): Promise<void> {
   const inst = installedDirs();
   if (!dir || !inst) throw new Error('indisponible dans cette installation');
   const file = path.join(dir, AUTOSTART_NAME);
+  await fsp.rm(path.join(dir, OLD_AUTOSTART_NAME), { force: true });
   if (!on) return void (await fsp.rm(file, { force: true }));
   const node = path.join(inst.root, 'runtime', 'node.exe');
   const script = path.join(inst.appDir, 'server.mjs');
   const q = (s: string) => s.replace(/"/g, '""');
   const text =
-    "' Demarre le serveur Ma Bibliotheque en arriere-plan a l'ouverture de session.\r\n" +
+    "' Demarre le serveur Spotifree en arriere-plan a l'ouverture de session.\r\n" +
     'Set sh = CreateObject("WScript.Shell")\r\n' +
     `sh.Run """${q(node)}"" --no-warnings ""${q(script)}"" run", 0, False\r\n`;
   await fsp.mkdir(dir, { recursive: true });
@@ -105,11 +108,12 @@ export async function setAutostart(on: boolean): Promise<void> {
 // ---------------------------------------------------------------- lanceurs installés
 
 /**
- * Après une mise à jour automatique, les petits lanceurs (« Ma Bibliotheque.vbs », « Ma Bibliotheque Serveur.vbs »…)
- * livrés dans « app/launchers » sont copiés à la racine de l'installation. Une seule fois, les raccourcis « Ma Bibliotheque »
- * existants (bureau, menu Démarrer) sont pointés sur le lecteur, et un raccourci « Ma Bibliotheque Serveur » est créé à côté.
+ * Après une mise à jour automatique, les petits lanceurs (« Spotifree.vbs », « Spotifree Serveur.vbs »…)
+ * livrés dans « app/launchers » sont copiés à la racine de l'installation. Une seule fois, les raccourcis existants
+ * (bureau, menu Démarrer), y compris ceux de l'ancien nom « Ma Bibliotheque », deviennent « Spotifree » (le lecteur)
+ * et « Spotifree Serveur » (l'application Serveur).
  */
-const SHORTCUTS_REV = '2';
+const SHORTCUTS_REV = '3';
 
 export async function ensureLaunchers(dataDir: string, log: (m: string) => void): Promise<void> {
   const inst = installedDirs();
@@ -123,20 +127,25 @@ export async function ensureLaunchers(dataDir: string, log: (m: string) => void)
       const same = fs.existsSync(to) && (await fsp.readFile(to)).equals(from);
       if (!same) await fsp.writeFile(to, from);
     }
+    // Démarrage avec Windows activé sous l'ancien nom : on le refait sous le nouveau.
+    const startup = startupDir();
+    if (startup && fs.existsSync(path.join(startup, OLD_AUTOSTART_NAME))) await setAutostart(true).catch(() => {});
     const marker = path.join(dataDir, 'shortcuts.done');
     if (!isWin) return;
     if (fs.existsSync(marker) && (await fsp.readFile(marker, 'utf8')).trim() === SHORTCUTS_REV) return;
     const ps = [
       '$ws = New-Object -ComObject WScript.Shell',
       "$wsh = Join-Path $env:SystemRoot 'System32\\wscript.exe'",
-      "$vbsPlayer = Join-Path $env:MB_ROOT 'Ma Bibliotheque.vbs'",
-      "$vbsServer = Join-Path $env:MB_ROOT 'Ma Bibliotheque Serveur.vbs'",
+      "$vbsPlayer = Join-Path $env:MB_ROOT 'Spotifree.vbs'",
+      "$vbsServer = Join-Path $env:MB_ROOT 'Spotifree Serveur.vbs'",
+      "$iconPlayer = Join-Path $env:MB_ROOT 'app\\icone.ico'",
       "$iconServer = Join-Path $env:MB_ROOT 'app\\icone-serveur.ico'",
       "foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {",
-      "$p = Join-Path $d 'Ma Bibliotheque.lnk'",
-      'if ((Test-Path $p) -and (Test-Path $vbsPlayer)) {',
-      "$l = $ws.CreateShortcut($p); $l.TargetPath = $wsh; $l.Arguments = ([char]34 + $vbsPlayer + [char]34); $l.WorkingDirectory = $env:MB_ROOT; $l.WindowStyle = 1; $l.Description = 'Ma Bibliotheque - lecteur'; $l.Save()",
-      "if (Test-Path $vbsServer) { $s = $ws.CreateShortcut((Join-Path $d 'Ma Bibliotheque Serveur.lnk')); $s.TargetPath = $wsh; $s.Arguments = ([char]34 + $vbsServer + [char]34); $s.WorkingDirectory = $env:MB_ROOT; $s.WindowStyle = 1; $s.Description = 'Ma Bibliotheque - serveur'; if (Test-Path $iconServer) { $s.IconLocation = $iconServer }; $s.Save() }",
+      "$old = Join-Path $d 'Ma Bibliotheque.lnk'; $oldS = Join-Path $d 'Ma Bibliotheque Serveur.lnk'; $p = Join-Path $d 'Spotifree.lnk'",
+      'if (((Test-Path $old) -or (Test-Path $p)) -and (Test-Path $vbsPlayer)) {',
+      'Remove-Item $old, $oldS -ErrorAction SilentlyContinue',
+      "$l = $ws.CreateShortcut($p); $l.TargetPath = $wsh; $l.Arguments = ([char]34 + $vbsPlayer + [char]34); $l.WorkingDirectory = $env:MB_ROOT; $l.WindowStyle = 1; $l.Description = 'Spotifree - lecteur'; if (Test-Path $iconPlayer) { $l.IconLocation = $iconPlayer }; $l.Save()",
+      "if (Test-Path $vbsServer) { $s = $ws.CreateShortcut((Join-Path $d 'Spotifree Serveur.lnk')); $s.TargetPath = $wsh; $s.Arguments = ([char]34 + $vbsServer + [char]34); $s.WorkingDirectory = $env:MB_ROOT; $s.WindowStyle = 1; $s.Description = 'Spotifree - serveur'; if (Test-Path $iconServer) { $s.IconLocation = $iconServer }; $s.Save() }",
       '} }',
     ].join('; ');
     await new Promise<void>((resolve, reject) => {
@@ -148,7 +157,7 @@ export async function ensureLaunchers(dataDir: string, log: (m: string) => void)
       );
     });
     await fsp.writeFile(marker, SHORTCUTS_REV);
-    log("Raccourcis mis à jour : « Ma Bibliotheque » ouvre le lecteur, « Ma Bibliotheque Serveur » ouvre l'application Serveur.");
+    log("Raccourcis mis à jour : « Spotifree » ouvre le lecteur, « Spotifree Serveur » ouvre l'application Serveur.");
   } catch (e) {
     log(`Lanceurs non mis à jour : ${errMsg(e)}`);
   }

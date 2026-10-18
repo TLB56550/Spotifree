@@ -25,7 +25,7 @@ function Frame({ children }: { children: ReactNode }) {
     <div className="auth">
       <div className="auth-art">
         <Vinyl className="auth-vinyl" />
-        <p className="auth-brand">Ma Bibliothèque</p>
+        <p className="auth-brand">Spotifree</p>
         <p className="auth-tagline">Ta musique, à portée de tous ceux que tu invites.</p>
       </div>
       <main className="auth-card">{children}</main>

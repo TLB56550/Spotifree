@@ -10,7 +10,7 @@ import { VERSION, isWin } from './config';
 import { installedDirs } from './desktop';
 import { errMsg } from './util';
 
-/** Code de sortie qui demande au lanceur (« Lancer Ma Bibliotheque.bat ») de redémarrer l'application. */
+/** Code de sortie qui demande au lanceur (« Lancer Spotifree.bat ») de redémarrer l'application. */
 export const EXIT_RESTART = 75;
 
 const REPO = 'TLB56550/Spotifree';

@@ -26,8 +26,8 @@ function install(name, { launchers = false } = {}) {
   fs.cpSync(path.join(root, 'web', 'dist'), path.join(dir, 'app', 'public'), { recursive: true });
   if (launchers) {
     fs.mkdirSync(path.join(dir, 'app', 'launchers'));
-    fs.writeFileSync(path.join(dir, 'app', 'launchers', 'Ma Bibliotheque.vbs'), "' lanceur\r\n");
-    fs.writeFileSync(path.join(dir, 'app', 'launchers', 'Ma Bibliotheque Serveur.vbs'), "' lanceur serveur\r\n");
+    fs.writeFileSync(path.join(dir, 'app', 'launchers', 'Spotifree.vbs'), "' lanceur\r\n");
+    fs.writeFileSync(path.join(dir, 'app', 'launchers', 'Spotifree Serveur.vbs'), "' lanceur serveur\r\n");
   }
   return dir;
 }
@@ -126,13 +126,13 @@ try {
   assert.deepEqual(st, { available: true, enabled: false });
   st = (await call('PUT', '/api/autostart', { enabled: true })).json;
   assert.equal(st.enabled, true);
-  const vbs = fs.readFileSync(path.join(tmp, 'startup-a', 'Ma Bibliotheque (serveur).vbs'));
+  const vbs = fs.readFileSync(path.join(tmp, 'startup-a', 'Spotifree (serveur).vbs'));
   assert.deepEqual([...vbs.subarray(0, 2)], [0xff, 0xfe], 'UTF-16 avec BOM');
   const text = vbs.subarray(2).toString('utf16le');
   assert.ok(text.includes(path.join(dir, 'runtime', 'node.exe')) && text.includes(' run"'), text);
   st = (await call('PUT', '/api/autostart', { enabled: false })).json;
   assert.equal(st.enabled, false);
-  assert.ok(!fs.existsSync(path.join(tmp, 'startup-a', 'Ma Bibliotheque (serveur).vbs')));
+  assert.ok(!fs.existsSync(path.join(tmp, 'startup-a', 'Spotifree (serveur).vbs')));
   ok('Démarrage avec Windows : activé (script en arrière-plan) puis coupé');
 
   // 5. « Arrêter le serveur » l'arrête vraiment (et le superviseur ne le relance pas)
@@ -167,10 +167,10 @@ try {
   // 7. Lanceurs livrés avec une mise à jour : copiés à la racine de l'installation
   dir = install('b', { launchers: true });
   r = player(dir);
-  await until(async () => fs.existsSync(path.join(dir, 'Ma Bibliotheque.vbs')));
-  await until(async () => fs.existsSync(path.join(dir, 'Ma Bibliotheque Serveur.vbs')));
-  assert.equal(fs.readFileSync(path.join(dir, 'Ma Bibliotheque.vbs'), 'utf8'), "' lanceur\r\n");
-  assert.equal(fs.readFileSync(path.join(dir, 'Ma Bibliotheque Serveur.vbs'), 'utf8'), "' lanceur serveur\r\n");
+  await until(async () => fs.existsSync(path.join(dir, 'Spotifree.vbs')));
+  await until(async () => fs.existsSync(path.join(dir, 'Spotifree Serveur.vbs')));
+  assert.equal(fs.readFileSync(path.join(dir, 'Spotifree.vbs'), 'utf8'), "' lanceur\r\n");
+  assert.equal(fs.readFileSync(path.join(dir, 'Spotifree Serveur.vbs'), 'utf8'), "' lanceur serveur\r\n");
   await call('POST', '/api/shutdown');
   await until(async () => (await health()) === null);
   ok('Lanceurs de la mise à jour (lecteur et serveur) : copiés dans le dossier d\'installation');

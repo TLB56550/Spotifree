@@ -60,7 +60,7 @@ export function UpdateGate({ statusUrl = '/api/update' }: { statusUrl?: string }
     <div className="update-gate" role="alertdialog" aria-live="polite" aria-label="Mise à jour en cours">
       <div className="update-card">
         <Download aria-hidden />
-        <h2>Mise à jour de Ma Bibliothèque</h2>
+        <h2>Mise à jour de Spotifree</h2>
         <p className="update-versions">
           {from} → {s?.latest ?? '…'}
         </p>
@@ -70,7 +70,7 @@ export function UpdateGate({ statusUrl = '/api/update' }: { statusUrl?: string }
         <p className="update-text">{text}</p>
         {failed && (
           <p className="update-text">
-            Le redémarrage prend plus de temps que prévu. Si rien ne se passe, relance Ma Bibliothèque avec son raccourci.
+            Le redémarrage prend plus de temps que prévu. Si rien ne se passe, relance Spotifree avec son raccourci.
           </p>
         )}
       </div>

@@ -22,7 +22,7 @@ const SHORTCUTS: [string, string][] = [
   ['/', 'Aller à la recherche'],
 ];
 
-/** Réglages personnels : apparence, son, compte. Le serveur se gère dans l'application « Ma Bibliothèque Serveur ». */
+/** Réglages personnels : apparence, son, compte. Le serveur se gère dans l'application « Spotifree Serveur ». */
 export default function SettingsPage() {
   const { data: about } = useAbout();
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: () => api.get<Stats>('/api/stats') });

@@ -493,7 +493,7 @@ if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
 if (typeof document !== 'undefined') {
   usePlayer.subscribe((s, prev) => {
     if (s.current !== prev.current || s.playing !== prev.playing) {
-      document.title = s.current && s.playing ? `${s.current.title} · ${s.current.artist}` : 'Ma Bibliothèque';
+      document.title = s.current && s.playing ? `${s.current.title} · ${s.current.artist}` : 'Spotifree';
       if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
         navigator.mediaSession.playbackState = s.current ? (s.playing ? 'playing' : 'paused') : 'none';
       }

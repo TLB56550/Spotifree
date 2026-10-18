@@ -71,7 +71,7 @@ export function ServerSection({ onShutdown }: { onShutdown: () => void }) {
 
       <section className="setting-block">
         <h2>Arrêter le serveur</h2>
-        <p className="muted">Plus personne n’a accès à la bibliothèque tant que le serveur est arrêté. Pour le relancer, ouvre « Ma Bibliotheque Serveur » ou « Ma Bibliotheque ».</p>
+        <p className="muted">Plus personne n’a accès à la bibliothèque tant que le serveur est arrêté. Pour le relancer, ouvre « Spotifree Serveur » ou « Spotifree ».</p>
         <div className="setting-actions">
           <button type="button" className="btn btn-danger" onClick={onShutdown}>
             <Power /> Arrêter le serveur

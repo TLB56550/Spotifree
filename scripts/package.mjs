@@ -1,4 +1,4 @@
-// Assemble le dossier « Ma Bibliotheque » prêt à l'emploi sous Windows, puis le compresse.
+// Assemble le dossier « Spotifree » prêt à l'emploi sous Windows, puis le compresse.
 //
 //   node scripts/package.mjs            (compile puis assemble)
 //   node scripts/package.mjs --skip-build
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDir = path.join(root, 'release');
 const cacheDir = path.join(root, '.cache');
-const name = 'Ma Bibliotheque';
+const name = 'Spotifree';
 const stage = path.join(releaseDir, name);
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
@@ -71,11 +71,11 @@ const launcher = `@echo off
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title Ma Bibliotheque
+title Spotifree
 set OPEN_BROWSER=1
 
 echo.
-echo   Ma Bibliotheque demarre...
+echo   Spotifree demarre...
 echo   Garde cette fenetre ouverte pendant que tu ecoutes ta musique.
 echo   Pour quitter : bouton "Arreter" dans l'application Serveur, ou ferme cette fenetre.
 echo.
@@ -99,7 +99,7 @@ if not "%CODE%"=="0" (
   pause >nul
 )
 `;
-fs.writeFileSync(path.join(stage, 'Lancer Ma Bibliotheque.bat'), crlf(launcher));
+fs.writeFileSync(path.join(stage, 'Lancer Spotifree.bat'), crlf(launcher));
 
 // Lanceurs sans fenêtre noire (VBScript, ASCII uniquement : les chemins sont calculés à l'exécution).
 const vbsHead = `Set fso = CreateObject("Scripting.FileSystemObject")
@@ -108,27 +108,27 @@ root = fso.GetParentFolderName(WScript.ScriptFullName)
 sh.CurrentDirectory = root
 node = """" & root & "\\runtime\\node.exe"" --no-warnings """ & root & "\\app\\server.mjs"" "
 `;
-const playerVbs = `' Ouvre le lecteur Ma Bibliotheque (ecoute uniquement : il ne gere pas le serveur).
+const playerVbs = `' Ouvre le lecteur Spotifree (ecoute uniquement : il ne gere pas le serveur).
 ' Le serveur est demarre en arriere-plan s'il ne tourne pas deja. Fermer le lecteur n'arrete pas le serveur.
 ${vbsHead}sh.Run node & "player", 0, False
 `;
-const serverVbs = `' Ouvre l'application Serveur Ma Bibliotheque (comptes, appareils, musique, mises a jour...).
+const serverVbs = `' Ouvre l'application Serveur Spotifree (comptes, appareils, musique, mises a jour...).
 ' Le serveur est demarre en arriere-plan s'il ne tourne pas deja. Cette application ne lit aucune musique.
 ${vbsHead}sh.Run node & "console", 0, False
 `;
 const chooseVbs = `' Choisit le serveur que ce lecteur utilise (ce PC par defaut, ou un NAS plus tard).
-${vbsHead}addr = InputBox("Adresse du serveur Ma Bibliotheque utilise par ce lecteur." & vbCrLf & vbCrLf & "Ce PC : http://127.0.0.1:4242" & vbCrLf & "Un NAS ou un autre PC : par exemple http://192.168.1.20:4242", "Ma Bibliotheque - serveur", "http://127.0.0.1:4242")
+${vbsHead}addr = InputBox("Adresse du serveur Spotifree utilise par ce lecteur." & vbCrLf & vbCrLf & "Ce PC : http://127.0.0.1:4242" & vbCrLf & "Un NAS ou un autre PC : par exemple http://192.168.1.20:4242", "Spotifree - serveur", "http://127.0.0.1:4242")
 If addr <> "" Then
   rc = sh.Run(node & "player --set-server """ & addr & """", 0, True)
   If rc = 0 Then
-    MsgBox "C'est enregistre. Rouvre Ma Bibliotheque pour utiliser ce serveur.", 64, "Ma Bibliotheque"
+    MsgBox "C'est enregistre. Rouvre Spotifree pour utiliser ce serveur.", 64, "Spotifree"
   Else
-    MsgBox "Adresse invalide : elle doit commencer par http:// ou https://", 48, "Ma Bibliotheque"
+    MsgBox "Adresse invalide : elle doit commencer par http:// ou https://", 48, "Spotifree"
   End If
 End If
 `;
 fs.mkdirSync(path.join(stage, 'app', 'launchers'), { recursive: true });
-for (const [file, text] of [['Ma Bibliotheque.vbs', playerVbs], ['Ma Bibliotheque Serveur.vbs', serverVbs], ['Choisir le serveur.vbs', chooseVbs]]) {
+for (const [file, text] of [['Spotifree.vbs', playerVbs], ['Spotifree Serveur.vbs', serverVbs], ['Choisir le serveur.vbs', chooseVbs]]) {
   fs.writeFileSync(path.join(stage, file), crlf(text));
   fs.writeFileSync(path.join(stage, 'app', 'launchers', file), crlf(text));
 }
@@ -136,12 +136,12 @@ for (const [file, text] of [['Ma Bibliotheque.vbs', playerVbs], ['Ma Bibliothequ
 const installer = `@echo off
 setlocal
 chcp 65001 >nul
-title Installation de Ma Bibliotheque
+title Installation de Spotifree
 set "SRC=%~dp0"
-set "DEST=%LOCALAPPDATA%\\Programs\\Ma Bibliotheque"
+set "DEST=%LOCALAPPDATA%\\Programs\\Spotifree"
 
 echo.
-echo   Installation de Ma Bibliotheque
+echo   Installation de Spotifree
 echo   Emplacement : %DEST%
 echo.
 
@@ -159,17 +159,20 @@ robocopy "%SRC%." "%DEST%" /E /XD "code-source" /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 goto echec_copie
 
 :raccourcis
+rem 2b. Ancien nom de l'application (Ma Bibliotheque) : l'ancienne installation est retiree (tes donnees sont ailleurs, dans %APPDATA%)
+if exist "%LOCALAPPDATA%\\Programs\\Ma Bibliotheque\\app\\server.mjs" rmdir /s /q "%LOCALAPPDATA%\\Programs\\Ma Bibliotheque" >nul 2>&1
+
 rem 3. Raccourcis : Bureau + menu Demarrer (le lecteur et le serveur)
 echo   Creation des raccourcis...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $dest = $env:DEST; $icone = Join-Path $dest 'app\\icone.ico'; $iconeS = Join-Path $dest 'app\\icone-serveur.ico'; $wsh = Join-Path $env:SystemRoot 'System32\\wscript.exe'; foreach ($dossier in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { $l = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque.lnk')); $l.TargetPath = $wsh; $l.Arguments = ([char]34 + (Join-Path $dest 'Ma Bibliotheque.vbs') + [char]34); $l.WorkingDirectory = $dest; $l.WindowStyle = 1; $l.Description = 'Ma Bibliotheque - lecteur'; if (Test-Path $icone) { $l.IconLocation = $icone }; $l.Save(); $s = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque Serveur.lnk')); $s.TargetPath = $wsh; $s.Arguments = ([char]34 + (Join-Path $dest 'Ma Bibliotheque Serveur.vbs') + [char]34); $s.WorkingDirectory = $dest; $s.WindowStyle = 1; $s.Description = 'Ma Bibliotheque - serveur'; if (Test-Path $iconeS) { $s.IconLocation = $iconeS }; $s.Save() }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $dest = $env:DEST; $icone = Join-Path $dest 'app\\icone.ico'; $iconeS = Join-Path $dest 'app\\icone-serveur.ico'; $wsh = Join-Path $env:SystemRoot 'System32\\wscript.exe'; foreach ($dossier in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { Remove-Item (Join-Path $dossier 'Ma Bibliotheque.lnk'), (Join-Path $dossier 'Ma Bibliotheque Serveur.lnk') -ErrorAction SilentlyContinue; $l = $ws.CreateShortcut((Join-Path $dossier 'Spotifree.lnk')); $l.TargetPath = $wsh; $l.Arguments = ([char]34 + (Join-Path $dest 'Spotifree.vbs') + [char]34); $l.WorkingDirectory = $dest; $l.WindowStyle = 1; $l.Description = 'Spotifree - lecteur'; if (Test-Path $icone) { $l.IconLocation = $icone }; $l.Save(); $s = $ws.CreateShortcut((Join-Path $dossier 'Spotifree Serveur.lnk')); $s.TargetPath = $wsh; $s.Arguments = ([char]34 + (Join-Path $dest 'Spotifree Serveur.vbs') + [char]34); $s.WorkingDirectory = $dest; $s.WindowStyle = 1; $s.Description = 'Spotifree - serveur'; if (Test-Path $iconeS) { $s.IconLocation = $iconeS }; $s.Save() }"
 if errorlevel 1 goto echec_raccourcis
 
 echo.
 echo   C'est installe !
 echo.
 echo   - Deux raccourcis sont sur ton bureau et dans le menu Demarrer :
-echo       "Ma Bibliotheque"          = le lecteur (pour ecouter)
-echo       "Ma Bibliotheque Serveur"  = le serveur (comptes, appareils, musique)
+echo       "Spotifree"          = le lecteur (pour ecouter)
+echo       "Spotifree Serveur"  = le serveur (comptes, appareils, musique)
 echo   - L'application est rangee ici : %DEST%
 echo   - Tes playlists et tes likes sont conserves (dossier %APPDATA%\\MaBibliotheque).
 echo.
@@ -177,13 +180,13 @@ echo   Tu peux maintenant supprimer le dossier d'origine (celui de Telechargemen
 echo   ainsi que le fichier .zip.
 echo.
 echo   L'application va s'ouvrir...
-start "" wscript.exe "%DEST%\\Ma Bibliotheque.vbs"
+start "" wscript.exe "%DEST%\\Spotifree.vbs"
 echo.
 pause
 exit /b 0
 
 :incomplet
-echo   Ce fichier doit rester dans le dossier "Ma Bibliotheque", a cote du dossier
+echo   Ce fichier doit rester dans le dossier "Spotifree", a cote du dossier
 echo   "runtime" et du dossier "app". Remets-le la puis relance l'installation.
 echo.
 pause
@@ -191,7 +194,7 @@ exit /b 1
 
 :echec_copie
 echo.
-echo   La copie a echoue. Ferme Ma Bibliotheque si elle est ouverte, puis relance.
+echo   La copie a echoue. Ferme Spotifree si elle est ouverte, puis relance.
 echo.
 pause
 exit /b 1
@@ -200,21 +203,21 @@ exit /b 1
 echo.
 echo   L'application est copiee dans : %DEST%
 echo   mais les raccourcis n'ont pas pu etre crees. Tu peux lancer l'application
-echo   avec "Lancer Ma Bibliotheque.bat" dans ce dossier.
+echo   avec "Lancer Spotifree.bat" dans ce dossier.
 echo.
 pause
 exit /b 1
 `;
-fs.writeFileSync(path.join(stage, 'Installer Ma Bibliotheque.bat'), crlf(installer));
+fs.writeFileSync(path.join(stage, 'Installer Spotifree.bat'), crlf(installer));
 
 const resetBat = `@echo off
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title Ma Bibliotheque - mot de passe oublie
+title Spotifree - mot de passe oublie
 echo.
 echo   Mot de passe oublie : cree un mot de passe provisoire pour un compte.
-echo   (Plus simple : dans l'application "Ma Bibliotheque Serveur", page
+echo   (Plus simple : dans l'application "Spotifree Serveur", page
 echo   "Comptes", bouton "Mot de passe" a cote de la personne.)
 echo.
 set /p MAIL=  Adresse e-mail du compte : 
@@ -236,7 +239,7 @@ run('tar', ['-czf', bundle, '-C', stage, 'app']);
 fs.writeFileSync(`${bundle}.sha256`, `${sha256(bundle)}  Ma-Bibliotheque-app.tar.gz\n`);
 console.log(`  ${bundle} (${(fs.statSync(bundle).size / 1024).toFixed(0)} Ko)`);
 
-const readme = `MA BIBLIOTHEQUE  -  version ${version}
+const readme = `SPOTIFREE  -  version ${version}
 =====================================
 
 Ta musique, sur ton PC, avec une interface a la Spotify : albums, artistes,
@@ -249,10 +252,10 @@ INSTALLER (a faire une seule fois)
 1. Si ce dossier est encore dans le fichier .zip : clique droit sur le .zip,
    "Extraire tout...", puis ouvre le dossier extrait. (Ne lance rien depuis
    l'interieur du .zip.)
-2. Double-clique sur  "Installer Ma Bibliotheque.bat".
-   Il range l'application dans  %LOCALAPPDATA%\\Programs\\Ma Bibliotheque
+2. Double-clique sur  "Installer Spotifree.bat".
+   Il range l'application dans  %LOCALAPPDATA%\\Programs\\Spotifree
    et cree deux raccourcis sur le bureau et dans le menu Demarrer :
-   "Ma Bibliotheque" (le lecteur) et "Ma Bibliotheque Serveur".
+   "Spotifree" (le lecteur) et "Spotifree Serveur".
 3. Tu peux ensuite supprimer le dossier extrait et le .zip.
 
 
@@ -260,9 +263,9 @@ DEUX APPLICATIONS : LE LECTEUR ET LE SERVEUR
 ---------------------------------------------
 Deux raccourcis sont crees sur le bureau et dans le menu Demarrer :
 
-  "Ma Bibliotheque"          LE LECTEUR : il sert uniquement a ECOUTER de la
+  "Spotifree"          LE LECTEUR : il sert uniquement a ECOUTER de la
                              musique (albums, playlists, likes, recherche...).
-  "Ma Bibliotheque Serveur"  LE SERVEUR : il sert uniquement a GERER (comptes,
+  "Spotifree Serveur"  LE SERVEUR : il sert uniquement a GERER (comptes,
                              appareils, dossiers de musique, importation, acces
                              depuis le telephone, mises a jour, arret). Il ne
                              lit aucune musique.
@@ -285,8 +288,8 @@ Si Windows affiche "Windows a protege votre ordinateur" :
 clique sur "Informations complementaires" puis "Executer quand meme".
 C'est normal pour un programme qui n'a pas ete telecharge depuis le Store.
 
-Sans installer : "Ma Bibliotheque.vbs" (lecteur) et "Ma Bibliotheque Serveur.vbs"
-fonctionnent aussi directement depuis ce dossier. "Lancer Ma Bibliotheque.bat"
+Sans installer : "Spotifree.vbs" (lecteur) et "Spotifree Serveur.vbs"
+fonctionnent aussi directement depuis ce dossier. "Lancer Spotifree.bat"
 lance le serveur dans une fenetre visible (utile seulement pour comprendre un
 probleme).
 
@@ -348,11 +351,11 @@ doublon. L'importation ne se fait plus depuis le lecteur ni le telephone.
 
 PREMIERE UTILISATION
 --------------------
-1. Ouvre "Ma Bibliotheque Serveur" > "Musique" et choisis le dossier qui
+1. Ouvre "Spotifree Serveur" > "Musique" et choisis le dossier qui
    contient ta musique (par exemple C:\\Users\\TonNom\\Music). Formats lus : MP3,
    FLAC, M4A/AAC, OGG/Opus, WAV. Les pochettes sont reconnues (integrees aux
    fichiers, ou fichiers "cover.jpg" / "folder.jpg" dans le dossier de l'album).
-2. Ouvre "Ma Bibliotheque" (le lecteur) et cree ton compte.
+2. Ouvre "Spotifree" (le lecteur) et cree ton compte.
 
 L'analyse se fait en arriere-plan : les premiers titres apparaissent tout de
 suite. Ensuite, les fichiers ajoutes, renommes ou supprimes sont detectes
@@ -368,12 +371,12 @@ au lecteur avec son propre compte : il n'y a pas de code a saisir. La musique
 est lue depuis le serveur et rien n'est copie sur l'appareil.
 
 Cote serveur (une fois) :
-1. Ouvre "Ma Bibliotheque Serveur" > "Appareils" et active "Autoriser l'acces
+1. Ouvre "Spotifree Serveur" > "Appareils" et active "Autoriser l'acces
    depuis le reseau".
 2. Windows demande une autorisation "Pare-feu Windows Defender" pour
    node.exe : coche "Reseaux prives" puis "Autoriser l'acces".
    (Si tu as clique sur Annuler : desactive puis reactive l'acces, ou
-   autorise "Ma Bibliotheque / node.exe" dans les parametres du pare-feu.)
+   autorise "Spotifree / node.exe" dans les parametres du pare-feu.)
 3. Donne l'adresse affichee (par exemple http://192.168.x.x:4243) aux
    personnes concernees, ou fais-leur scanner le QR code.
 
@@ -453,7 +456,7 @@ crees (ou mis a jour) automatiquement par la mise a jour.
 Mise a jour manuelle (en secours) : extrais la nouvelle version et relance son
 installateur : il remplace l'ancienne version, tes playlists et tes likes sont
 gardes.
-Pour tout effacer : supprime  %LOCALAPPDATA%\\Programs\\Ma Bibliotheque,
+Pour tout effacer : supprime  %LOCALAPPDATA%\\Programs\\Spotifree,
 les deux raccourcis (lecteur et serveur), et le dossier %APPDATA%\\MaBibliotheque.
 
 

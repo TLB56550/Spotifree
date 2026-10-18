@@ -75,9 +75,9 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <section className="panel sidebar-top">
-        <NavLink to="/" className="brand" aria-label="Ma Bibliothèque, accueil">
+        <NavLink to="/" className="brand" aria-label="Spotifree, accueil">
           <img src="/icons/logo.png" className="brand-mark" alt="" width="30" height="30" />
-          <span className="brand-name">Ma Bibliothèque</span>
+          <span className="brand-name">Spotifree</span>
         </NavLink>
         <nav className="nav" aria-label="Navigation principale">
           {navItem('/', <Home />, 'Accueil', true)}

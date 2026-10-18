@@ -64,7 +64,7 @@ try {
       const res = await fetch(`${url}/api/health`);
       const info = (await res.json()) as { app?: string };
       if (info.app === 'ma-bibliotheque') {
-        log('Ma Bibliothèque est déjà lancée : ouverture de la fenêtre.');
+        log('Spotifree est déjà lancée : ouverture de la fenêtre.');
         if (process.env.OPEN_BROWSER === '1') await openAppWindow(url);
         process.exit(0);
       }
@@ -79,7 +79,7 @@ try {
 }
 
 await consoleServer.start();
-log(`Ma Bibliothèque ${VERSION} est prête : ${url}`);
+log(`Spotifree ${VERSION} est prête : ${url}`);
 log(`Application Serveur : http://127.0.0.1:${CONSOLE_PORT}`);
 log(`Données : ${dataDir}`);
 if (!auth.hasUsers()) log("Aucun compte pour l'instant : ouvre le lecteur sur ce PC pour créer le premier compte.");
