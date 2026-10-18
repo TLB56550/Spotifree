@@ -663,6 +663,22 @@ try {
   assert.equal((await upload('vide.mp3', Buffer.alloc(0))).status, 400);
   ok('Extension inconnue, fichier illisible ou vide : refusés proprement');
 
+  // Contrôle du contenu : seul un vrai fichier audio, conforme à son extension, est accepté
+  const imposters = [
+    ['image.mp3', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600)])], // une image PNG
+    ['programme.flac', Buffer.concat([Buffer.from('MZ'), Buffer.alloc(600)])], // un exécutable Windows
+    ['mp3-deguise.wav', sample], // un vrai MP3 déguisé en WAV
+    ['texte.opus', Buffer.from('Ceci est un simple texte, pas de la musique.')],
+  ];
+  for (const [name, data] of imposters) {
+    r = await upload(name, data);
+    assert.equal(r.status, 415, `${name} doit être refusé`);
+    assert.match(r.json.error ?? JSON.stringify(r.json), /pas un vrai fichier|corrompu|vidéo/, name);
+    assert.ok(!fs.existsSync(path.join(uploadsDir, name)), `${name} ne doit pas être rangé`);
+  }
+  assert.ok(!fs.readdirSync(uploadsDir).some((n) => n.endsWith('.part')), 'aucun fichier temporaire ne reste');
+  ok('Contrôle des importations : image, programme, MP3 déguisé en WAV, texte : refusés, rien n\'est rangé');
+
   assert.equal((await upload('x.mp3', sample, { mb: false })).status, 403);
   for (const cookie of [alice, adminCk]) {
     assert.equal((await upload('x.mp3', sample, { port: RPORT, route: '/api/upload', cookie })).status, 404, 'le lecteur n\'accepte aucun envoi');

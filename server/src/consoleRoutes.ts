@@ -10,6 +10,7 @@ import { Auth, checkPassword, cleanName, normalizeEmail } from './auth';
 import { defaultMusicDir, isWin } from './config';
 import { getMusicDirs, setSetting } from './db';
 import { autostartStatus, openAppWindow, setAutostart } from './desktop';
+import { assertAudioFile } from './audioCheck';
 import { AUDIO_EXT } from './scanner';
 import type { Ctx } from './routes';
 import { assertRoomFor, computeStorage, deleteImport, listImports } from './storage';
@@ -191,6 +192,8 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
       await pipeline(stream, limiter, fs.createWriteStream(part, { flags: 'wx' }));
       if (received === 0) throw new HttpError(400, 'Le fichier est vide.');
       if (declared > 0 && received !== declared) throw new HttpError(400, 'Envoi incomplet.');
+      // Contrôle du contenu avant de le ranger : seuls de vrais fichiers audio entrent dans la bibliothèque.
+      await assertAudioFile(part, parsed.ext);
       await fsp.rename(part, target);
     } catch (e) {
       await fsp.rm(part, { force: true }).catch(() => {});
