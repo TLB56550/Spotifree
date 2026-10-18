@@ -495,6 +495,7 @@ try {
   // Actions réservées au PC
   for (const [m, u, b] of [
     ['PUT', '/api/settings', { musicDirs: [] }],
+    ['PUT', '/api/autostart', { enabled: true }],
     ['POST', '/api/scan', {}],
     ['POST', '/api/shutdown', undefined],
     ['POST', '/api/settings/browse', undefined],

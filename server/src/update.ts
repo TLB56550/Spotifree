@@ -5,9 +5,9 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { fileURLToPath } from 'node:url';
 import type { UpdateStatus } from '../../shared/types';
 import { VERSION, isWin } from './config';
+import { installedDirs } from './desktop';
 import { errMsg } from './util';
 
 /** Code de sortie qui demande au lanceur (« Lancer Ma Bibliotheque.bat ») de redémarrer l'application. */
@@ -118,9 +118,7 @@ export class Updater {
     private log: (msg: string) => void,
     private restart: () => Promise<void>,
   ) {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const installed = path.basename(here) === 'app' && fs.existsSync(path.join(here, '..', 'runtime'));
-    this.appDir = process.env.UPDATE_TARGET_DIR ? path.resolve(process.env.UPDATE_TARGET_DIR) : installed ? here : null;
+    this.appDir = installedDirs()?.appDir ?? null;
     this.st.canInstall = this.appDir !== null && parseVersion(VERSION) !== null;
   }
 

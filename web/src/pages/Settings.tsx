@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Power, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type { ScanStatus, Stats } from '@shared/types';
 import { api } from '../lib/api';
 import { formatTotal, plural } from '../lib/format';
@@ -7,6 +7,7 @@ import { invalidateLibrary } from '../lib/queryClient';
 import { toast, useUI } from '../store/ui';
 import { FolderManager, ScanProgress, useSettings } from '../components/Folders';
 import { Appearance } from '../components/Appearance';
+import { ServerSection } from '../components/ServerSection';
 import { SoundSettings } from '../components/SoundPanel';
 import { UpdateSection } from '../components/UpdateSection';
 import { UploadList, UploadPicker } from '../components/Uploads';
@@ -50,9 +51,9 @@ export default function SettingsPage() {
 
   const shutdown = async () => {
     const ok = await confirm({
-      title: 'Arrêter Ma Bibliothèque ?',
-      message: 'La musique s’arrêtera et l’application se fermera. Tu pourras la relancer avec « Lancer Ma Bibliothèque ».',
-      confirmLabel: 'Arrêter',
+      title: 'Arrêter le serveur ?',
+      message: 'La musique s’arrêtera ici et sur tes téléphones, qui n’auront plus accès à la bibliothèque. Tu pourras le relancer avec le raccourci « Ma Bibliothèque ».',
+      confirmLabel: 'Arrêter le serveur',
       danger: true,
     });
     if (!ok) return;
@@ -142,8 +143,8 @@ export default function SettingsPage() {
     return (
       <div className="page-pad">
         <div className="empty-block">
-          <h2>Ma Bibliothèque est arrêtée</h2>
-          <p>Tu peux fermer cette fenêtre.</p>
+          <h2>Le serveur est arrêté</h2>
+          <p>Tu peux fermer cette fenêtre. Pour le relancer, ouvre le raccourci « Ma Bibliothèque ».</p>
         </div>
       </div>
     );
@@ -212,6 +213,8 @@ export default function SettingsPage() {
 
       {settings?.local && <PhoneAccess />}
 
+      <ServerSection onShutdown={() => void shutdown()} />
+
       <section className="setting-block shortcuts-block">
         <h2>Raccourcis clavier</h2>
         <dl className="shortcuts">
@@ -230,11 +233,6 @@ export default function SettingsPage() {
           Version {settings?.version ?? '…'} · Les données (playlists, likes, pochettes) sont dans <code>{settings?.dataDir}</code>.
           Tes fichiers de musique ne sont jamais modifiés.
         </p>
-        <div className="setting-actions">
-          <button type="button" className="btn btn-danger" onClick={() => void shutdown()}>
-            <Power /> Arrêter Ma Bibliothèque
-          </button>
-        </div>
         {stats && <p className="muted small">{plural(stats.tracks, 'titre', 'titres')} dans la bibliothèque.</p>}
         <UpdateSection />
       </section>

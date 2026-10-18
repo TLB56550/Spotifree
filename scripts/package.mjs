@@ -101,6 +101,34 @@ if not "%CODE%"=="0" (
 `;
 fs.writeFileSync(path.join(stage, 'Lancer Ma Bibliotheque.bat'), crlf(launcher));
 
+// Lanceurs sans fenêtre noire (VBScript, ASCII uniquement : les chemins sont calculés à l'exécution).
+const vbsHead = `Set fso = CreateObject("Scripting.FileSystemObject")
+Set sh = CreateObject("WScript.Shell")
+root = fso.GetParentFolderName(WScript.ScriptFullName)
+sh.CurrentDirectory = root
+node = """" & root & "\\runtime\\node.exe"" --no-warnings """ & root & "\\app\\server.mjs"" "
+`;
+const playerVbs = `' Ouvre le lecteur Ma Bibliotheque. Le serveur est demarre en arriere-plan s'il ne tourne pas deja.
+' Fermer la fenetre du lecteur n'arrete pas le serveur.
+${vbsHead}sh.Run node & "player", 0, False
+`;
+const chooseVbs = `' Choisit le serveur que ce lecteur utilise (ce PC par defaut, ou un NAS plus tard).
+${vbsHead}addr = InputBox("Adresse du serveur Ma Bibliotheque utilise par ce lecteur." & vbCrLf & vbCrLf & "Ce PC : http://127.0.0.1:4242" & vbCrLf & "Un NAS ou un autre PC : par exemple http://192.168.1.20:4242", "Ma Bibliotheque - serveur", "http://127.0.0.1:4242")
+If addr <> "" Then
+  rc = sh.Run(node & "player --set-server """ & addr & """", 0, True)
+  If rc = 0 Then
+    MsgBox "C'est enregistre. Rouvre Ma Bibliotheque pour utiliser ce serveur.", 64, "Ma Bibliotheque"
+  Else
+    MsgBox "Adresse invalide : elle doit commencer par http:// ou https://", 48, "Ma Bibliotheque"
+  End If
+End If
+`;
+fs.mkdirSync(path.join(stage, 'app', 'launchers'), { recursive: true });
+for (const [file, text] of [['Ma Bibliotheque.vbs', playerVbs], ['Choisir le serveur.vbs', chooseVbs]]) {
+  fs.writeFileSync(path.join(stage, file), crlf(text));
+  fs.writeFileSync(path.join(stage, 'app', 'launchers', file), crlf(text));
+}
+
 const installer = `@echo off
 setlocal
 chcp 65001 >nul
@@ -129,7 +157,7 @@ if errorlevel 8 goto echec_copie
 :raccourcis
 rem 3. Raccourcis : Bureau + menu Demarrer
 echo   Creation des raccourcis...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $dest = $env:DEST; $icone = Join-Path $dest 'app\\icone.ico'; foreach ($dossier in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { $l = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque.lnk')); $l.TargetPath = Join-Path $dest 'Lancer Ma Bibliotheque.bat'; $l.WorkingDirectory = $dest; $l.WindowStyle = 7; $l.Description = 'Ma Bibliotheque'; if (Test-Path $icone) { $l.IconLocation = $icone }; $l.Save() }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $dest = $env:DEST; $icone = Join-Path $dest 'app\\icone.ico'; foreach ($dossier in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { $l = $ws.CreateShortcut((Join-Path $dossier 'Ma Bibliotheque.lnk')); $l.TargetPath = Join-Path $env:SystemRoot 'System32\\wscript.exe'; $l.Arguments = ([char]34 + (Join-Path $dest 'Ma Bibliotheque.vbs') + [char]34); $l.WorkingDirectory = $dest; $l.WindowStyle = 1; $l.Description = 'Ma Bibliotheque'; if (Test-Path $icone) { $l.IconLocation = $icone }; $l.Save() }"
 if errorlevel 1 goto echec_raccourcis
 
 echo.
@@ -143,7 +171,7 @@ echo   Tu peux maintenant supprimer le dossier d'origine (celui de Telechargemen
 echo   ainsi que le fichier .zip.
 echo.
 echo   L'application va s'ouvrir...
-start "" /min "%DEST%\\Lancer Ma Bibliotheque.bat"
+start "" wscript.exe "%DEST%\\Ma Bibliotheque.vbs"
 echo.
 pause
 exit /b 0
@@ -198,16 +226,23 @@ INSTALLER (a faire une seule fois)
    et cree un raccourci "Ma Bibliotheque" sur le bureau et dans le menu Demarrer.
 3. Tu peux ensuite supprimer le dossier extrait et le .zip.
 
-Pour lancer l'application, utilise ensuite le raccourci du bureau.
-Une fenetre reduite dans la barre des taches est le moteur : laisse-la
-tranquille, elle se ferme avec "Parametres" > "Arreter".
+Pour ouvrir l'application, utilise ensuite le raccourci du bureau : c'est le
+LECTEUR. Le SERVEUR (qui garde ta bibliotheque et sert aussi le telephone)
+tourne a part, en arriere-plan, sans fenetre : le raccourci le demarre s'il ne
+tourne pas deja. Fermer la fenetre du lecteur n'arrete pas le serveur : le
+telephone continue de fonctionner. Pour arreter le serveur : "Parametres" >
+"Serveur" > "Arreter le serveur". Pour qu'il demarre tout seul avec Windows :
+"Parametres" > "Serveur" > "Demarrer le serveur avec Windows".
+Plus tard, si le serveur est deplace sur un NAS : "Choisir le serveur.vbs"
+(dans le dossier d'installation) indique au lecteur ou le trouver.
 
 Si Windows affiche "Windows a protege votre ordinateur" :
 clique sur "Informations complementaires" puis "Executer quand meme".
 C'est normal pour un programme qui n'a pas ete telecharge depuis le Store.
 
-Sans installer : "Lancer Ma Bibliotheque.bat" fonctionne aussi directement
-depuis ce dossier.
+Sans installer : "Ma Bibliotheque.vbs" fonctionne aussi directement depuis ce
+dossier. "Lancer Ma Bibliotheque.bat" lance le serveur dans une fenetre visible
+(utile seulement pour comprendre un probleme).
 
 
 APPARENCE
@@ -325,9 +360,13 @@ RACCOURCIS CLAVIER
   Clic droit      menu d'un titre, d'un album ou d'une playlist
 
 
-QUITTER
--------
-"Parametres" > "Arreter", ou ferme la fenetre noire. La musique s'arrete.
+FERMER ET ARRETER
+-----------------
+- Fermer la fenetre : seul le lecteur se ferme (la musique jouee sur le PC
+  s'arrete), le serveur reste allume.
+- Arreter le serveur : "Parametres" > "Serveur" > "Arreter le serveur".
+  Le telephone n'a alors plus acces a la bibliotheque.
+Le journal du serveur est dans %APPDATA%\\MaBibliotheque\\server.log.
 
 
 OU SONT MES DONNEES ?
@@ -363,8 +402,9 @@ les retirer a tout moment.
 
 EN CAS DE PROBLEME
 ------------------
-- Si l'application est deja lancee, relancer le .bat rouvre simplement sa
-  fenetre. Si le message "Le port 4242 est deja utilise par un autre programme"
+- Si le serveur est deja lance, le raccourci rouvre simplement la fenetre du
+  lecteur. Si un probleme persiste, regarde le journal du serveur (voir plus
+  haut). Si le message "Le port 4242 est deja utilise par un autre programme"
   apparait, un autre logiciel occupe ce port : ferme-le (ou redemarre le PC).
 - Une chanson ne se lit pas : verifie qu'elle s'ouvre dans un autre lecteur ;
   les fichiers abimes sont ignores et comptes dans "Parametres" > Analyse.

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import Fastify from 'fastify';
-import { HOST, PORT, REMOTE_PORT, VERSION, isWin, resolveDataDir, resolvePublicDir } from './config';
+import { HOST, PORT, REMOTE_PORT, VERSION, resolveDataDir, resolvePublicDir } from './config';
+import { ensureLaunchers, openAppWindow } from './desktop';
 import { getMusicDirs, openDb } from './db';
 import { RemoteAccess } from './remote';
 import { registerRoutes } from './routes';
@@ -43,26 +43,6 @@ registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, updater, publ
 
 const url = `http://127.0.0.1:${PORT}`;
 
-/** Ouvre l'application dans une fenêtre dédiée (Edge ou Chrome), sinon dans le navigateur par défaut. */
-function openApp(): void {
-  if (!isWin) return;
-  const attempts: string[][] = [
-    ['/c', 'start', '', 'msedge', `--app=${url}`],
-    ['/c', 'start', '', 'chrome', `--app=${url}`],
-    ['/c', 'start', '', url],
-  ];
-  const tryNext = (i: number) => {
-    const args = attempts[i];
-    if (!args) return;
-    const child = spawn('cmd', args, { stdio: 'ignore', windowsHide: true });
-    child.on('error', () => tryNext(i + 1));
-    child.on('exit', (code) => {
-      if (code !== 0) tryNext(i + 1);
-    });
-  };
-  tryNext(0);
-}
-
 try {
   await app.listen({ port: PORT, host: HOST });
 } catch (e) {
@@ -74,7 +54,7 @@ try {
       const info = (await res.json()) as { app?: string };
       if (info.app === 'ma-bibliotheque') {
         log('Ma Bibliothèque est déjà lancée : ouverture de la fenêtre.');
-        if (process.env.OPEN_BROWSER === '1') openApp();
+        if (process.env.OPEN_BROWSER === '1') openAppWindow(url);
         process.exit(0);
       }
     } catch {
@@ -90,8 +70,9 @@ try {
 log(`Ma Bibliothèque ${VERSION} est prête : ${url}`);
 log(`Données : ${dataDir}`);
 if (!publicDir) log("Attention : l'interface (dossier « public ») est introuvable.");
-if (process.env.OPEN_BROWSER === '1') openApp();
+if (process.env.OPEN_BROWSER === '1') openAppWindow(url);
 await remote.init();
+void ensureLaunchers(dataDir, log);
 
 if (!getMusicDirs(db).length) log("Aucun dossier de musique n'est configuré : choisis-le depuis l'application.");
 scanner.watch();

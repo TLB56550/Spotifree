@@ -7,6 +7,7 @@ import type { Settings } from '../../shared/types';
 import { VERSION, defaultMusicDir, isLoopbackHost, isWin } from './config';
 import { getMusicDirs, setSetting, type DB } from './db';
 import * as q from './queries';
+import { autostartStatus, setAutostart } from './desktop';
 import { PAIR_PAGE } from './pairPage';
 import { isLocalRequest, type RemoteAccess } from './remote';
 import type { Scanner } from './scanner';
@@ -327,6 +328,22 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireLocal(req);
     void ctx.updater.check();
     return ctx.updater.status();
+  });
+
+  app.get('/api/autostart', async (req) => {
+    requireLocal(req);
+    return autostartStatus();
+  });
+  app.put('/api/autostart', async (req) => {
+    requireLocal(req);
+    const body = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Valeur manquante');
+    try {
+      await setAutostart(body.enabled);
+    } catch (e) {
+      throw new HttpError(400, `Impossible de modifier le démarrage automatique : ${errMsg(e)}`);
+    }
+    return autostartStatus();
   });
 
   app.post('/api/shutdown', async (req, reply) => {

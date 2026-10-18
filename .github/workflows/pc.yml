@@ -39,6 +39,9 @@ jobs:
       - name: Test de la mise à jour automatique
         run: node scripts/update-test.mjs
 
+      - name: Test serveur et lecteur séparés
+        run: node scripts/player-test.mjs
+
       - name: Assembler le dossier Windows, le zip et le paquet de mise à jour
         run: node scripts/package.mjs --skip-build
 

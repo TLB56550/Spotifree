@@ -1,12 +1,12 @@
 {
   "name": "ma-bibliotheque-server",
   "private": true,
-  "version": "0.6.2",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/main.ts",
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\" --define:__APP_VERSION__=\\\"0.6.2\\\" --legal-comments=none"
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\" --define:__APP_VERSION__=\\\"0.7.0\\\" --legal-comments=none"
   },
   "dependencies": {
     "fastify": "^5.0.0",
