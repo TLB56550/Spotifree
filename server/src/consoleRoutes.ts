@@ -12,7 +12,7 @@ import { getMusicDirs, setSetting } from './db';
 import { autostartStatus, openAppWindow, setAutostart } from './desktop';
 import { AUDIO_EXT } from './scanner';
 import type { Ctx } from './routes';
-import { GB, computeStorage, deleteImport, freeSpaceAt, invalidateStorage, listImports, minFreeGb } from './storage';
+import { assertRoomFor, computeStorage, deleteImport, listImports } from './storage';
 import { HttpError, errMsg, mustInt, pathKey } from './util';
 import { VERSION } from './config';
 
@@ -161,11 +161,8 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (declared > MAX_UPLOAD) throw new HttpError(413, 'Fichier trop volumineux (1 Go au maximum).');
 
     await fsp.mkdir(ctx.uploadsDir, { recursive: true });
-    // On garde de la place libre sur le disque : l'importation est refusée si elle la fait passer sous la réserve.
-    const free = await freeSpaceAt(ctx.uploadsDir);
-    if (free !== null && free - declared < minFreeGb(db) * GB) {
-      throw new HttpError(507, `Pas assez d'espace libre sur le disque (réserve de ${minFreeGb(db)} Go). Libère de la place ou change la réserve dans Stockage.`);
-    }
+    // La musique ne doit pas dépasser la limite d'espace (Stockage) ni remplir le disque.
+    await assertRoomFor(db, ctx.uploadsDir, declared);
     const trackAt = (file: string) => db.prepare('SELECT id FROM tracks WHERE path = ?').get(file) as { id: number } | undefined;
 
     // Déjà envoyé (même nom, même taille) : on ne le copie pas une seconde fois.
@@ -214,23 +211,18 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
       scanner.start();
       throw new HttpError(415, "Ce fichier n'a pas pu être lu : il est peut-être corrompu.");
     }
-    invalidateStorage();
     reply.code(201);
     return { duplicate: false };
   });
 
-  // ---- Stockage : espace utilisé et libre, fichiers importés
-  app.get('/api/console/storage', async (req) => {
-    const force = (req.query as { refresh?: string }).refresh === '1';
-    const st = scanner.status;
-    return computeStorage(db, ctx.dataDir, ctx.uploadsDir, ctx.coversDir, force || st.running, st.finishedAt ?? 0);
-  });
+  // ---- Stockage : place prise par la musique (limitée), fichiers importés
+  app.get('/api/console/storage', async () => computeStorage(db, ctx.uploadsDir));
 
   app.put('/api/console/storage/settings', async (req) => {
-    const v = body(req).minFreeGb;
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100_000) throw new HttpError(400, 'Indique un nombre de Go entre 0 et 100 000.');
-    setSetting(db, 'import_min_free_gb', Math.round(v * 10) / 10);
-    return computeStorage(db, ctx.dataDir, ctx.uploadsDir, ctx.coversDir, true);
+    const v = body(req).limitGb;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 100_000) throw new HttpError(400, 'Indique une limite en Go (plus que 0, au plus 100 000).');
+    setSetting(db, 'music_limit_gb', v);
+    return computeStorage(db, ctx.uploadsDir);
   });
 
   app.get('/api/console/storage/imports', async () => listImports(db, ctx.uploadsDir));
@@ -238,7 +230,6 @@ export function registerConsoleRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.delete('/api/console/storage/imports/:name', async (req) => {
     await deleteImport(ctx.uploadsDir, (req.params as { name: string }).name);
     scanner.start(); // le titre disparaît de la bibliothèque
-    invalidateStorage();
     return listImports(db, ctx.uploadsDir);
   });
 

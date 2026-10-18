@@ -225,15 +225,6 @@ export interface ConsoleStats {
   devices: number;
 }
 
-/** Un disque (ou volume) qui héberge de la musique ou les données de Spotifree. */
-export interface StorageDisk {
-  id: string;
-  /** « C:\\ » sous Windows. */
-  label: string;
-  total: number;
-  free: number;
-}
-
 export interface StorageFolder {
   path: string;
   /** « music » : dossier suivi ; « imports » : dossier des fichiers importés dans Spotifree. */
@@ -241,34 +232,15 @@ export interface StorageFolder {
   exists: boolean;
   tracks: number;
   bytes: number;
-  diskId: string | null;
 }
 
-export interface StorageFormat {
-  format: string;
-  tracks: number;
-  bytes: number;
-}
-
-export interface StorageAlbum {
-  id: number;
-  title: string;
-  artist: string;
-  tracks: number;
-  bytes: number;
-}
-
-/** Application Serveur > Stockage. */
+/** Application Serveur > Stockage : la place prise par la musique, limitée. */
 export interface ConsoleStorage {
-  disks: StorageDisk[];
+  /** Place maximale pour la musique (octets). */
+  limitBytes: number;
+  usedBytes: number;
+  tracks: number;
   folders: StorageFolder[];
-  formats: StorageFormat[];
-  biggest: StorageAlbum[];
-  library: { tracks: number; bytes: number };
-  /** Ce que Spotifree garde pour lui : base de données, pochettes, journaux. */
-  app: { dataDir: string; bytes: number; covers: number; database: number; diskId: string | null };
-  /** Espace à laisser libre : les importations sont refusées en dessous (en Go). */
-  minFreeGb: number;
   at: number;
 }
 

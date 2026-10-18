@@ -561,7 +561,7 @@ try {
     ['GET', '/api/console/users', undefined],
     ['GET', '/api/console/sessions', undefined],
     ['GET', '/api/console/storage', undefined],
-    ['PUT', '/api/console/storage/settings', { minFreeGb: 0 }],
+    ['PUT', '/api/console/storage/settings', { limitGb: 20 }],
     ['GET', '/api/console/storage/imports', undefined],
     ['DELETE', '/api/console/storage/imports/x.mp3', undefined],
     ['POST', '/api/console/shutdown', undefined],
@@ -675,32 +675,30 @@ try {
   r = await cget('/api/console/storage');
   assert.equal(r.status, 200, r.text);
   let storage = r.json;
-  assert.equal(storage.library.tracks, 6);
-  assert.ok(storage.library.bytes > 100_000);
+  assert.equal(storage.limitBytes, 20 * 1024 ** 3, 'limite de 20 Go par défaut');
+  assert.equal(storage.tracks, 6);
+  assert.ok(storage.usedBytes > 100_000 && storage.usedBytes < storage.limitBytes);
   const impFolder = storage.folders.find((f) => f.kind === 'imports');
   assert.equal(impFolder.path, uploadsDir);
   assert.equal(impFolder.tracks, 2, 'les deux fichiers importés sont comptés à part');
   const musicFolder = storage.folders.find((f) => f.kind === 'music');
   assert.equal(musicFolder.tracks, 4);
-  assert.equal(impFolder.bytes + musicFolder.bytes, storage.library.bytes);
-  assert.equal(storage.formats.reduce((n, f) => n + f.tracks, 0), 6);
-  assert.ok(storage.formats.every((f) => f.format === f.format.toUpperCase()));
-  assert.ok(storage.biggest.length >= 1 && storage.biggest[0].bytes >= storage.biggest.at(-1).bytes);
-  assert.ok(storage.app.database > 0 && storage.app.bytes > 0 && storage.app.covers >= 0);
-  assert.ok(storage.disks.length >= 1 && storage.disks.every((d) => d.total > d.free && d.free >= 0));
-  assert.ok(storage.folders.every((f) => storage.disks.some((d) => d.id === f.diskId)));
-  assert.equal(storage.minFreeGb, 1);
-  ok('Stockage : disques (libre / total), dossiers, formats, albums les plus volumineux, données de l\'application');
+  assert.equal(impFolder.bytes + musicFolder.bytes, storage.usedBytes);
+  for (const gone of ['disks', 'formats', 'biggest', 'app', 'library', 'minFreeGb']) assert.equal(storage[gone], undefined, `plus de « ${gone} »`);
+  ok('Stockage : uniquement la musique (utilisée / limite de 20 Go) et ses dossiers');
 
-  r = await ccall('PUT', '/api/console/storage/settings', { minFreeGb: -3 });
+  r = await ccall('PUT', '/api/console/storage/settings', { limitGb: -3 });
   assert.equal(r.status, 400);
-  r = await ccall('PUT', '/api/console/storage/settings', { minFreeGb: 100_000 });
+  assert.equal((await ccall('PUT', '/api/console/storage/settings', { limitGb: 0 })).status, 400);
+  r = await ccall('PUT', '/api/console/storage/settings', { limitGb: 0.0001 });
   assert.equal(r.status, 200);
-  assert.equal(r.json.minFreeGb, 100_000);
-  assert.equal((await upload('trop-gros.mp3', sample)).status, 507, 'importation refusée sous la réserve d\'espace libre');
+  assert.equal(r.json.limitBytes, Math.round(0.0001 * 1024 ** 3));
+  r = await upload('trop-gros.mp3', sample);
+  assert.equal(r.status, 507, 'importation refusée au-delà de la limite');
+  assert.match(JSON.stringify(r.json), /Limite de .* atteinte/);
   assert.ok(!fs.existsSync(path.join(uploadsDir, 'trop-gros.mp3')));
-  assert.equal((await ccall('PUT', '/api/console/storage/settings', { minFreeGb: 1 })).json.minFreeGb, 1);
-  ok('Réserve d\'espace libre : importation refusée en dessous, réglage validé');
+  assert.equal((await ccall('PUT', '/api/console/storage/settings', { limitGb: 20 })).json.limitBytes, 20 * 1024 ** 3);
+  ok('Limite de musique : importation refusée au-delà, réglage validé, remis à 20 Go');
 
   console.log('Gestion des comptes (application Serveur)');
   r = await cget('/api/console/users');
@@ -749,7 +747,7 @@ try {
   await sleep(300);
   await waitScan();
   assert.equal((await cget('/api/console/stats')).json.tracks, 5, 'le titre supprimé quitte la bibliothèque');
-  assert.equal((await cget('/api/console/storage?refresh=1')).json.library.tracks, 5);
+  assert.equal((await cget('/api/console/storage')).json.tracks, 5);
   ok('Fichier importé supprimé : retiré du disque et de la bibliothèque, aucune sortie du dossier des importations');
 
   // Inscriptions fermées

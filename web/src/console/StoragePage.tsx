@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, FolderOpen, HardDrive, RefreshCw, Trash2, Upload } from 'lucide-react';
-import type { ConsoleStorage, StorageDisk, StorageImport } from '@shared/types';
+import { AlertTriangle, FolderOpen, HardDrive, Trash2, Upload } from 'lucide-react';
+import type { ConsoleStorage, StorageImport } from '@shared/types';
 import { api, ApiError } from '../lib/api';
 import { formatAgo, formatBytes } from '../lib/format';
 import { queryClient } from '../lib/queryClient';
@@ -12,45 +12,6 @@ const STORAGE = ['console', 'storage'];
 const IMPORTS = ['console', 'storage', 'imports'];
 const n = (v: number) => v.toLocaleString('fr-FR');
 const pct = (part: number, whole: number) => (whole > 0 ? Math.min(100, (part / whole) * 100) : 0);
-
-/** Barre d'un disque : la musique de Spotifree, ses données, le reste du disque, puis l'espace libre. */
-function DiskCard({ disk, st }: { disk: StorageDisk; st: ConsoleStorage }) {
-  const music = st.folders.filter((f) => f.diskId === disk.id).reduce((s, f) => s + f.bytes, 0);
-  const data = st.app.diskId === disk.id ? st.app.bytes : 0;
-  const used = Math.max(0, disk.total - disk.free);
-  const other = Math.max(0, used - music - data);
-  const low = disk.free < Math.max(st.minFreeGb * 1024 ** 3, disk.total * 0.05);
-  const parts = [
-    { key: 'music', label: 'Musique Spotifree', bytes: music },
-    { key: 'data', label: 'Données Spotifree', bytes: data },
-    { key: 'other', label: 'Autres fichiers', bytes: other },
-    { key: 'free', label: 'Libre', bytes: disk.free },
-  ];
-  return (
-    <li className={`c-disk ${low ? 'is-low' : ''}`}>
-      <div className="c-disk-head">
-        <HardDrive aria-hidden />
-        <strong>Disque {disk.label}</strong>
-        <span className="c-disk-free">
-          <strong>{formatBytes(disk.free)}</strong> libres sur {formatBytes(disk.total)}
-        </span>
-      </div>
-      <div className="c-bar" role="img" aria-label={parts.map((p) => `${p.label} : ${formatBytes(p.bytes)}`).join(', ')}>
-        {parts.map((p) => (
-          <span key={p.key} className={`c-seg c-seg-${p.key}`} style={{ width: `${pct(p.bytes, disk.total)}%` }} title={`${p.label} : ${formatBytes(p.bytes)}`} />
-        ))}
-      </div>
-      <ul className="c-legend">
-        {parts.map((p) => (
-          <li key={p.key}>
-            <i className={`c-swatch c-seg-${p.key}`} aria-hidden />
-            {p.label} <strong>{formatBytes(p.bytes)}</strong>
-          </li>
-        ))}
-      </ul>
-    </li>
-  );
-}
 
 function Imports({ st }: { st: ConsoleStorage }) {
   const confirm = useUI((s) => s.confirm);
@@ -118,17 +79,18 @@ function Imports({ st }: { st: ConsoleStorage }) {
   );
 }
 
-function Reserve({ st }: { st: ConsoleStorage }) {
-  const [value, setValue] = useState(String(st.minFreeGb));
+function Limit({ st }: { st: ConsoleStorage }) {
+  const current = Math.round((st.limitBytes / 1024 ** 3) * 100) / 100;
+  const [value, setValue] = useState(String(current).replace('.', ','));
   const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const gb = Number(value.replace(',', '.'));
-    if (!Number.isFinite(gb) || gb < 0) return toast('Indique un nombre de Go (0 ou plus).', 'error');
+    if (!Number.isFinite(gb) || gb <= 0) return toast('Indique un nombre de Go (plus que 0).', 'error');
     setBusy(true);
     try {
-      queryClient.setQueryData(STORAGE, await api.put<ConsoleStorage>('/api/console/storage/settings', { minFreeGb: gb }));
-      toast('Réserve enregistrée');
+      queryClient.setQueryData(STORAGE, await api.put<ConsoleStorage>('/api/console/storage/settings', { limitGb: gb }));
+      toast('Limite enregistrée');
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Impossible d’enregistrer.', 'error');
     } finally {
@@ -136,15 +98,15 @@ function Reserve({ st }: { st: ConsoleStorage }) {
     }
   };
   return (
-    <section className="setting-block" aria-labelledby="reserve-title">
-      <h2 id="reserve-title">Garder de la place libre</h2>
-      <p className="muted">Les importations sont refusées si elles font passer le disque sous cette réserve. Elle évite de remplir complètement le disque du PC.</p>
+    <section className="setting-block" aria-labelledby="limit-title">
+      <h2 id="limit-title">Limite de la musique</h2>
+      <p className="muted">Une fois la limite atteinte, les nouvelles importations sont refusées. Tes dossiers de musique ne sont jamais modifiés ni supprimés.</p>
       <form className="folder-form" onSubmit={(e) => void submit(e)}>
-        <label className="sr-only" htmlFor="reserve">
-          Réserve d’espace libre en Go
+        <label className="sr-only" htmlFor="limit">
+          Limite de la musique en Go
         </label>
-        <input id="reserve" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} style={{ maxWidth: 120 }} />
-        <span className="muted">Go à garder libres</span>
+        <input id="limit" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} style={{ maxWidth: 120 }} />
+        <span className="muted">Go au maximum</span>
         <button type="submit" className="btn" disabled={busy}>
           Enregistrer
         </button>
@@ -153,65 +115,68 @@ function Reserve({ st }: { st: ConsoleStorage }) {
   );
 }
 
-/** Application Serveur > Stockage : espace utilisé et libre, répartition de la musique, fichiers importés. */
+/** Application Serveur > Stockage : la place prise par la musique, limitée, et les fichiers importés. */
 export function StoragePage() {
-  const { data: st, isFetching } = useQuery({ queryKey: STORAGE, queryFn: () => api.get<ConsoleStorage>('/api/console/storage'), refetchInterval: 10_000 });
-  const refresh = async () => {
-    try {
-      queryClient.setQueryData(STORAGE, await api.get<ConsoleStorage>('/api/console/storage?refresh=1'));
-    } catch {
-      toast('Impossible de mesurer le stockage.', 'error');
-    }
-  };
+  const { data: st } = useQuery({ queryKey: STORAGE, queryFn: () => api.get<ConsoleStorage>('/api/console/storage'), refetchInterval: 10_000 });
 
-  const lowDisks = st ? st.disks.filter((d) => d.free < Math.max(st.minFreeGb * 1024 ** 3, d.total * 0.05)) : [];
-  const diskLabel = (id: string | null) => st?.disks.find((d) => d.id === id)?.label;
+  const share = st ? pct(st.usedBytes, st.limitBytes) : 0;
+  const over = !!st && st.usedBytes > st.limitBytes;
+  const low = !!st && share >= 90;
+  const left = st ? Math.max(0, st.limitBytes - st.usedBytes) : 0;
 
   return (
     <div className="c-page">
       <header className="c-head">
         <div>
           <h1>Stockage</h1>
-          <p className="muted">L’espace pris par ta musique et ce qu’il reste sur les disques de ce PC.</p>
+          <p className="muted">La place prise par ta musique, limitée à {st ? formatBytes(st.limitBytes) : '20 Go'}.</p>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={() => void refresh()} disabled={isFetching}>
-          <RefreshCw /> Mesurer à nouveau
-        </button>
       </header>
 
       {!st ? null : (
         <>
-          {lowDisks.length > 0 && (
+          {low && (
             <div className="callout is-warn" role="status">
               <strong>
-                <AlertTriangle aria-hidden /> Il reste peu de place
+                <AlertTriangle aria-hidden /> {over ? 'La limite est dépassée' : 'La limite est presque atteinte'}
               </strong>
               <p>
-                Disque {lowDisks.map((d) => d.label).join(', ')} : {lowDisks.map((d) => formatBytes(d.free)).join(', ')} libres. Libère de la place avant d’importer d’autres fichiers.
+                {over
+                  ? 'Les nouvelles importations sont refusées. Supprime des fichiers importés ou augmente la limite.'
+                  : `Il reste ${formatBytes(left)} avant que les importations soient refusées.`}
               </p>
             </div>
           )}
 
-          <section className="c-block" aria-labelledby="disks-title">
-            <h2 id="disks-title">Disques</h2>
-            {st.disks.length === 0 ? (
-              <p className="muted">L’espace des disques n’a pas pu être mesuré sur ce PC.</p>
-            ) : (
-              <ul className="c-disks">
-                {st.disks.map((d) => (
-                  <DiskCard key={d.id} disk={d} st={st} />
-                ))}
-              </ul>
-            )}
-            <dl className="stats">
-              <div><dt>Titres</dt><dd>{n(st.library.tracks)}</dd></div>
-              <div><dt>Musique</dt><dd>{formatBytes(st.library.bytes)}</dd></div>
-              <div><dt>Données de Spotifree</dt><dd>{formatBytes(st.app.bytes)}</dd></div>
-            </dl>
+          <section className={`c-disk ${low ? 'is-low' : ''}`} aria-labelledby="usage-title">
+            <div className="c-disk-head">
+              <HardDrive aria-hidden />
+              <strong id="usage-title">Musique</strong>
+              <span className="c-disk-free">
+                <strong>{formatBytes(st.usedBytes)}</strong> utilisés sur {formatBytes(st.limitBytes)}
+              </span>
+            </div>
+            <div className="c-bar" role="img" aria-label={`${formatBytes(st.usedBytes)} utilisés sur ${formatBytes(st.limitBytes)}`}>
+              <span className="c-seg c-seg-music" style={{ width: `${share}%` }} />
+              <span className="c-seg c-seg-free" style={{ width: `${100 - share}%` }} />
+            </div>
+            <ul className="c-legend">
+              <li>
+                <i className="c-swatch c-seg-music" aria-hidden />
+                Utilisé <strong>{formatBytes(st.usedBytes)}</strong>
+              </li>
+              <li>
+                <i className="c-swatch c-seg-free" aria-hidden />
+                Disponible <strong>{formatBytes(left)}</strong>
+              </li>
+              <li>
+                {n(st.tracks)} titre{st.tracks > 1 ? 's' : ''}
+              </li>
+            </ul>
           </section>
 
           <section className="setting-block" aria-labelledby="folders-title">
-            <h2 id="folders-title">Dossiers</h2>
+            <h2 id="folders-title">Dossiers de musique</h2>
             <ul className="c-rows">
               {st.folders.map((f) => (
                 <li key={f.path} className={f.exists ? '' : 'is-missing'}>
@@ -222,11 +187,10 @@ export function StoragePage() {
                     </span>
                     <span className="muted small">
                       {f.kind === 'imports' ? 'Fichiers importés' : 'Dossier de musique'} · {f.exists ? `${n(f.tracks)} titre${f.tracks > 1 ? 's' : ''} · ${formatBytes(f.bytes)}` : 'introuvable (disque débranché ?)'}
-                      {diskLabel(f.diskId) ? ` · disque ${diskLabel(f.diskId)}` : ''}
                     </span>
-                    {f.exists && st.library.bytes > 0 && (
+                    {f.exists && st.usedBytes > 0 && (
                       <span className="c-meter" aria-hidden>
-                        <span style={{ width: `${pct(f.bytes, st.library.bytes)}%` }} />
+                        <span style={{ width: `${pct(f.bytes, st.usedBytes)}%` }} />
                       </span>
                     )}
                   </span>
@@ -238,70 +202,9 @@ export function StoragePage() {
             </p>
           </section>
 
-          <section className="setting-block" aria-labelledby="formats-title">
-            <h2 id="formats-title">Par format</h2>
-            {st.formats.length === 0 ? (
-              <p className="muted">Aucune musique pour le moment.</p>
-            ) : (
-              <ul className="c-rows">
-                {st.formats.map((f) => (
-                  <li key={f.format}>
-                    <span className="c-format">{f.format}</span>
-                    <span className="c-row-text">
-                      <span className="c-row-name">
-                        {formatBytes(f.bytes)} <span className="muted small">· {n(f.tracks)} titre{f.tracks > 1 ? 's' : ''} · {Math.round(pct(f.bytes, st.library.bytes))} %</span>
-                      </span>
-                      <span className="c-meter" aria-hidden>
-                        <span style={{ width: `${pct(f.bytes, st.library.bytes)}%` }} />
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {st.biggest.length > 0 && (
-            <section className="setting-block" aria-labelledby="big-title">
-              <h2 id="big-title">Albums les plus volumineux</h2>
-              <ul className="c-rows">
-                {st.biggest.map((a) => (
-                  <li key={a.id}>
-                    <span className="c-row-text">
-                      <span className="c-row-name">{a.title}</span>
-                      <span className="muted small">
-                        {a.artist} · {n(a.tracks)} titre{a.tracks > 1 ? 's' : ''}
-                      </span>
-                    </span>
-                    <strong className="c-size">{formatBytes(a.bytes)}</strong>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
           <Imports st={st} />
 
-          <section className="setting-block" aria-labelledby="app-title">
-            <h2 id="app-title">Données de Spotifree</h2>
-            <p className="muted">Base de données, pochettes et journaux. Ils restent petits, même avec une grande bibliothèque.</p>
-            <dl className="c-paths">
-              <div>
-                <dt>Dossier</dt>
-                <dd><code>{st.app.dataDir}</code></dd>
-              </div>
-              <div>
-                <dt>Base de données</dt>
-                <dd>{formatBytes(st.app.database)}</dd>
-              </div>
-              <div>
-                <dt>Pochettes</dt>
-                <dd>{formatBytes(st.app.covers)}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <Reserve key={st.minFreeGb} st={st} />
+          <Limit key={st.limitBytes} st={st} />
         </>
       )}
     </div>
