@@ -249,11 +249,11 @@ public class MainActivity extends Activity {
 
         col.addView(text(
                 "Où trouver cette adresse ?\n"
-                        + "Sur ton PC, ouvre Ma Bibliothèque, puis Paramètres > Téléphone. Choisis l'adresse « Tailscale » : "
+                        + "Sur le serveur, ouvre Ma Bibliothèque, puis Administration > Accès depuis d'autres appareils. Choisis l'adresse « Tailscale » : "
                         + "elle commence par 100. (le port 4243 est ajouté tout seul). "
                         + "Avec « tailscale serve », tu peux aussi saisir l'adresse https:// complète.\n\n"
-                        + "Le téléphone et le PC doivent tous les deux avoir Tailscale activé. "
-                        + "À la première connexion, saisis le code d'association affiché sur le PC.",
+                        + "Le téléphone et le serveur doivent tous les deux avoir Tailscale activé. "
+                        + "Ensuite, connecte-toi avec ton adresse e-mail et ton mot de passe (ou crée ton compte).",
                 14, MUTED, false, Gravity.START), stack(28));
         col.addView(text("Version " + Updater.installedName(this), 12, MUTED, false, Gravity.CENTER_HORIZONTAL), stack(24));
 

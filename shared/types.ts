@@ -111,21 +111,58 @@ export interface Settings {
   defaultMusicDir: string;
   platform: string;
   dataDir: string;
-  /** Dossier du PC où arrivent les fichiers envoyés depuis le téléphone (vide hors du PC). */
+  /** Dossier du serveur où arrivent les fichiers importés (vide pour les non-administrateurs). */
   uploadsDir: string;
   version: string;
   canBrowse: boolean;
-  /** Vrai quand la requête vient du PC lui-même (et non d'un téléphone associé). */
+  /** Vrai quand la requête vient du PC qui héberge le serveur. */
   local: boolean;
-  /** Nom de l'appareil associé qui fait la requête (null depuis le PC). */
-  deviceName: string | null;
 }
 
-export interface RemoteDevice {
+/** Compte connecté. */
+export interface User {
   id: number;
+  email: string;
   name: string;
+  isAdmin: boolean;
+  /** Mot de passe provisoire (donné par l'administrateur) : à remplacer avant toute chose. */
+  mustChange: boolean;
+}
+
+export interface AuthState {
+  /** Faux tant que personne n'a créé de compte (premier démarrage). */
+  hasUsers: boolean;
+  signupOpen: boolean;
+  /** Vrai si cette requête peut créer le compte administrateur (venue du PC du serveur). */
+  canSetup: boolean;
+  user: User | null;
+}
+
+/** Appareil connecté à un compte. */
+export interface UserSession {
+  id: number;
+  device: string;
   createdAt: number;
   lastSeen: number;
+  current: boolean;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  isAdmin: boolean;
+  disabled: boolean;
+  mustChange: boolean;
+  createdAt: number;
+  lastSeen: number | null;
+  playlistCount: number;
+  sessionCount: number;
+}
+
+export interface AdminUsers {
+  users: AdminUser[];
+  signupOpen: boolean;
 }
 
 export interface RemoteAddress {
@@ -142,8 +179,6 @@ export interface RemoteStatus {
   port: number;
   error: string | null;
   addresses: RemoteAddress[];
-  pairing: { code: string; expiresAt: number } | null;
-  devices: RemoteDevice[];
 }
 
 export interface Stats {

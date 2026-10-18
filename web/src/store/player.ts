@@ -193,7 +193,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     errorStreak++;
     // Après trois échecs d'affilée (connexion coupée, PC éteint…), on s'arrête au lieu de sauter toute la file.
     if (errorStreak >= 3) {
-      toast('La lecture est impossible pour le moment. Vérifie que ton PC est allumé et joignable.', 'error');
+      toast('La lecture est impossible pour le moment. Vérifie que le serveur est allumé et joignable.', 'error');
       return;
     }
     toast(`Impossible de lire « ${cur.title} ».`, 'error');

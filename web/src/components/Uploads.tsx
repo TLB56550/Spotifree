@@ -4,7 +4,7 @@ import { useUploads, type UploadItem } from '../store/uploads';
 
 const ACCEPT = 'audio/*,.mp3,.flac,.m4a,.aac,.ogg,.oga,.opus,.wav';
 
-/** Bouton « Envoyer vers le PC » : ouvre le sélecteur de fichiers du téléphone. */
+/** Bouton « Envoyer vers le serveur » : ouvre le sélecteur de fichiers du téléphone. */
 export function UploadPicker({ variant }: { variant: 'row' | 'button' | 'nav' }) {
   const input = useRef<HTMLInputElement>(null);
   const add = useUploads((s) => s.add);
@@ -33,8 +33,8 @@ export function UploadPicker({ variant }: { variant: 'row' | 'button' | 'nav' })
             <Upload aria-hidden />
           </span>
           <span className="lib-text">
-            <span className="lib-title">Envoyer de la musique vers le PC</span>
-            <span className="lib-sub">Choisis des fichiers audio de ce téléphone</span>
+            <span className="lib-title">Envoyer de la musique vers le serveur</span>
+            <span className="lib-sub">Choisis des fichiers audio de cet appareil</span>
           </span>
         </button>
       ) : (
@@ -59,7 +59,7 @@ function status(it: UploadItem): string {
     case 'done':
       return 'Ajouté';
     case 'duplicate':
-      return 'Déjà sur le PC';
+      return 'Déjà sur le serveur';
     default:
       return it.error ?? 'Échec';
   }
@@ -102,7 +102,7 @@ export function UploadList() {
   );
 }
 
-/** Sur le PC : liste flottante des importations, avec glisser-déposer de fichiers sur la fenêtre. */
+/** Pour l'administrateur : liste flottante des importations, avec glisser-déposer de fichiers sur la fenêtre. */
 export function UploadFloat() {
   const items = useUploads((s) => s.items);
   const add = useUploads((s) => s.add);
@@ -170,7 +170,7 @@ export function UploadBanner() {
     <div className="upload-banner" role="status">
       <Upload aria-hidden />
       <span>
-        Envoi vers le PC · {active.length > 1 ? `${active.length} fichiers` : '1 fichier'} · {pct} %
+        Envoi vers le serveur · {active.length > 1 ? `${active.length} fichiers` : '1 fichier'} · {pct} %
       </span>
       <span className="upload-banner-bar" aria-hidden>
         <span style={{ width: `${pct}%` }} />

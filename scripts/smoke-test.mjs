@@ -25,12 +25,24 @@ server.stdout.on('data', (d) => (logs += d));
 server.stderr.on('data', (d) => (logs += d));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Cookie de session de l'administrateur (« pot à cookies » du test) ; passer { cookie: '' } pour s'en passer.
+let jar = '';
+const authed = (url, init = {}) => fetch(base + url, { ...init, headers: { cookie: jar, ...(init.headers ?? {}) } });
 async function call(method, url, body, headers = {}) {
   const res = await fetch(base + url, {
     method,
-    headers: { 'x-mb': '1', ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...headers },
+    headers: {
+      'x-mb': '1',
+      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(jar ? { cookie: jar } : {}),
+      ...headers,
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (!('cookie' in headers)) {
+    const set = /mb_session=([^;]*)/.exec(res.headers.get('set-cookie') ?? '');
+    if (set) jar = set[1] ? `mb_session=${set[1]}` : '';
+  }
   const text = await res.text();
   let json;
   try {
@@ -85,8 +97,38 @@ try {
   assert.equal(hostStatus, 403);
   ok('Hôte inconnu refusé (DNS rebinding)');
 
+  console.log('Premier démarrage');
+  let r = await get('/api/auth/state');
+  assert.deepEqual(r.json, { hasUsers: false, signupOpen: true, canSetup: true, user: null });
+  for (const u of ['/api/tracks', '/api/home', '/api/settings', '/api/stream/1', '/api/cover/' + 'a'.repeat(40), '/api/remote']) {
+    r = await get(u);
+    assert.equal(r.status, 401, u);
+    assert.equal(r.json.code, 'login');
+  }
+  assert.equal((await call('PUT', '/api/settings', { musicDirs: [libDir] })).status, 401);
+  assert.equal((await get('/api/health')).status, 200);
+  ok('Sans compte : données refusées (401), seuls /api/health et l\'état de connexion répondent');
+
+  assert.equal((await call('POST', '/api/auth/register', { email: 'pas-un-mail', password: 'motdepasse1' })).status, 400);
+  assert.equal((await call('POST', '/api/auth/register', { email: 'admin@example.com', password: 'court' })).status, 400);
+  r = await call('POST', '/api/auth/register', { email: 'admin@example.com', password: 'motdepasse1' }, { 'x-forwarded-for': '203.0.113.9' });
+  assert.equal(r.status, 403, 'le premier compte ne se crée pas depuis un relais');
+  ok('Adresse invalide, mot de passe trop court, création du premier compte depuis un relais : refusés');
+
+  r = await call('POST', '/api/auth/register', { email: ' Admin@Example.com ', name: 'Tristan', password: 'motdepasse1' });
+  assert.equal(r.status, 201, r.text);
+  assert.equal(r.json.user.isAdmin, true);
+  assert.equal(r.json.user.email, 'admin@example.com');
+  assert.match(r.headers.get('set-cookie'), /HttpOnly/);
+  assert.ok(jar.length > 40);
+  const adminCk = jar;
+  r = await get('/api/auth/state');
+  assert.equal(r.json.user.name, 'Tristan');
+  assert.equal(r.json.canSetup, false);
+  ok('Premier compte = administrateur, connecté aussitôt (cookie HttpOnly)');
+
   console.log('Réglages et analyse');
-  let r = await call('PUT', '/api/settings', { musicDirs: ['/chemin/inexistant'] });
+  r = await call('PUT', '/api/settings', { musicDirs: ['/chemin/inexistant'] });
   assert.equal(r.status, 400);
   ok('Dossier inexistant refusé');
   r = await call('PUT', '/api/settings', { musicDirs: [libDir] });
@@ -154,7 +196,7 @@ try {
 
   console.log('Lecture (streaming)');
   const track = allTracks.find((t) => t.format === 'MP3');
-  const full = await fetch(`${base}/api/stream/${track.id}`);
+  const full = await authed(`/api/stream/${track.id}`);
   const size = Number(full.headers.get('content-length'));
   const bytes = Buffer.from(await full.arrayBuffer());
   assert.equal(full.status, 200);
@@ -162,28 +204,28 @@ try {
   assert.equal(full.headers.get('content-type'), 'audio/mpeg');
   assert.equal(full.headers.get('accept-ranges'), 'bytes');
   ok(`Fichier complet servi (${size} octets, audio/mpeg)`);
-  const part = await fetch(`${base}/api/stream/${track.id}`, { headers: { range: 'bytes=100-199' } });
+  const part = await authed(`/api/stream/${track.id}`, { headers: { range: 'bytes=100-199' } });
   assert.equal(part.status, 206);
   assert.equal(part.headers.get('content-range'), `bytes 100-199/${size}`);
   assert.deepEqual(Buffer.from(await part.arrayBuffer()), bytes.subarray(100, 200));
-  const tail = await fetch(`${base}/api/stream/${track.id}`, { headers: { range: 'bytes=-50' } });
+  const tail = await authed(`/api/stream/${track.id}`, { headers: { range: 'bytes=-50' } });
   assert.equal(tail.status, 206);
   assert.deepEqual(Buffer.from(await tail.arrayBuffer()), bytes.subarray(size - 50));
-  const open = await fetch(`${base}/api/stream/${track.id}`, { headers: { range: `bytes=${size - 10}-` } });
+  const open = await authed(`/api/stream/${track.id}`, { headers: { range: `bytes=${size - 10}-` } });
   assert.deepEqual(Buffer.from(await open.arrayBuffer()), bytes.subarray(size - 10));
-  const bad = await fetch(`${base}/api/stream/${track.id}`, { headers: { range: `bytes=${size + 5}-` } });
+  const bad = await authed(`/api/stream/${track.id}`, { headers: { range: `bytes=${size + 5}-` } });
   assert.equal(bad.status, 416);
   await bad.arrayBuffer();
   ok('Requêtes Range (début-fin, fin ouverte, derniers octets, hors limites → 416)');
   const flac = allTracks.find((t) => t.format === 'FLAC');
-  const f = await fetch(`${base}/api/stream/${flac.id}`);
+  const f = await authed(`/api/stream/${flac.id}`);
   assert.equal(f.headers.get('content-type'), 'audio/flac');
   await f.arrayBuffer();
   assert.equal((await get('/api/stream/999999')).status, 404);
   assert.equal((await get('/api/stream/abc')).status, 400);
   ok('Types MIME FLAC, 404 et 400');
 
-  const cover = await fetch(`${base}/api/cover/${byTitle['Lemonade'].cover}`);
+  const cover = await authed(`/api/cover/${byTitle['Lemonade'].cover}`);
   assert.equal(cover.status, 200);
   assert.match(cover.headers.get('content-type'), /^image\//);
   assert.match(cover.headers.get('cache-control'), /immutable/);
@@ -321,7 +363,7 @@ try {
   ok('index.html, ressources, 404, protection contre la traversée de dossiers');
 
 
-  console.log('Accès depuis le téléphone');
+  console.log('Accès depuis le réseau');
   const RPORT = PORT + 1;
   const rbase = `http://127.0.0.1:${RPORT}`;
   async function rcall(method, url, { cookie, body, headers = {}, mb = true } = {}) {
@@ -354,28 +396,27 @@ try {
 
   st = (await call('PUT', '/api/remote', { enabled: true })).json;
   assert.equal(st.running, true, JSON.stringify(st));
-  assert.match(st.pairing.code, /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/);
-  assert.ok(st.pairing.expiresAt > Date.now() + 9 * 60_000);
   assert.ok(Array.isArray(st.addresses));
-  ok('Activation : port ouvert, code d\'association généré');
+  assert.equal(st.pairing, undefined, 'plus de code d\'association');
+  ok('Activation par l\'administrateur : port ouvert');
 
-  // Visiteur non associé
+  // Visiteur non connecté
   assert.equal((await rcall('GET', '/api/health')).status, 200);
   for (const u of ['/api/tracks', '/api/albums', '/api/stream/1', '/api/settings', '/api/home', '/api/search?q=a']) {
     assert.equal((await rcall('GET', u)).status, 401, u);
   }
   assert.equal((await rcall('GET', '/api/cover/' + 'a'.repeat(40))).status, 401);
-  r = await rcall('GET', '/');
-  assert.equal(r.status, 200);
-  assert.match(r.text, /Associer ce téléphone/);
-  assert.match((await rcall('GET', '/album/3')).text, /Associer ce téléphone/);
+  assert.equal((await rcall('POST', '/api/pair', { body: { code: 'AAAA-AAAA' } })).status, 401, 'l\'ancienne association n\'existe plus');
+  r = await rcall('GET', '/album/3');
+  assert.match(r.text, /<title>test<\/title>/, 'l\'interface se charge : elle affiche l\'écran de connexion');
   assert.equal((await rcall('GET', '/assets/app.js')).status, 200);
   fs.writeFileSync(path.join(publicDir, 'manifest.webmanifest'), '{"name":"t"}');
   r = await rcall('GET', '/manifest.webmanifest');
-  assert.equal(r.status, 200);
   assert.equal(r.json?.name, 't', 'le manifeste est lu sans identifiants : il doit rester public');
-  assert.equal((await rcall('POST', '/api/pair', { body: { code: 'AAAA-AAAA' }, mb: false })).status, 403);
-  ok('Sans association : musique refusée (401), page d\'association et fichiers de l\'interface seuls accessibles');
+  r = await rcall('GET', '/api/auth/state');
+  assert.deepEqual(r.json, { hasUsers: true, signupOpen: true, canSetup: false, user: null });
+  assert.equal((await rcall('POST', '/api/auth/login', { mb: false, body: { email: 'a@b.fr', password: 'x' } })).status, 403);
+  ok('Sans connexion : musique refusée (401), interface et état de connexion seuls accessibles');
 
   // Un visiteur qui prétend être « localhost » n'est pas pour autant le PC
   const forged = await new Promise((resolve, reject) => {
@@ -391,50 +432,114 @@ try {
   });
   assert.equal(forged, 401);
   r = await call('GET', '/api/tracks', undefined, { 'x-forwarded-for': '203.0.113.9' });
-  assert.equal(r.status, 403, 'un relais (Tailscale Serve…) ne passe pas pour le PC');
-  r = await call('POST', '/api/shutdown', undefined, { 'x-forwarded-for': '203.0.113.9' });
-  assert.equal(r.status, 403);
-  ok('Faux « localhost » et requêtes relayées traitées comme des appareils distants');
+  assert.equal(r.status, 403, 'un relais (Tailscale Serve…) ne passe pas par le serveur du PC');
+  ok('Faux « localhost » et requêtes relayées refusés');
 
-  // Association
-  assert.equal((await rcall('POST', '/api/pair', { body: { code: 'ZZZZ-ZZZZ' } })).status, 400);
-  assert.equal((await rcall('POST', '/api/pair', { body: {} })).status, 400);
-  r = await rcall('POST', '/api/pair', {
-    body: { code: st.pairing.code.toLowerCase().replace('-', ' ') },
-    headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36' },
+  console.log('Comptes');
+  const UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36';
+  r = await rcall('POST', '/api/auth/register', {
+    body: { email: 'alice@example.com', name: 'Alice', password: 'motdepasse1' },
+    headers: { 'user-agent': UA },
   });
-  assert.equal(r.status, 200, r.text);
-  assert.equal(r.json.device, 'Pixel 7');
+  assert.equal(r.status, 201, r.text);
+  assert.equal(r.json.user.isAdmin, false);
   const setCookie = r.headers.get('set-cookie');
   assert.match(setCookie, /HttpOnly/);
   assert.match(setCookie, /SameSite=Lax/);
   assert.doesNotMatch(setCookie, /Secure/, 'pas de Secure en http');
-  const phone = cookieOf(r);
-  assert.ok(phone && phone.length > 40);
-  r = await rcall('POST', '/api/pair', { body: { code: st.pairing.code } });
-  assert.equal(r.status, 400, 'un code ne sert qu\'une fois');
-  ok('Association : code accepté (casse et tiret libres), cookie HttpOnly, nom « Pixel 7 », usage unique');
+  let alice = cookieOf(r);
+  assert.ok(alice && alice.length > 40);
+  r = await rcall('POST', '/api/auth/register', { body: { email: 'ALICE@example.com', password: 'motdepasse1' } });
+  assert.equal(r.status, 409, 'une adresse ne sert qu\'une fois, majuscules ou non');
+  assert.equal((await rcall('POST', '/api/auth/register', { body: { email: 'bad', password: 'motdepasse1' } })).status, 400);
+  assert.equal((await rcall('POST', '/api/auth/register', { body: { email: 'x@example.com', password: '1234567' } })).status, 400);
+  ok('Inscription ouverte : compte créé (non administrateur), doublons et saisies invalides refusés');
 
-  // Appareil associé
-  r = await rcall('GET', '/api/tracks', { cookie: phone });
+  const wrong = await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'pas-le-bon' } });
+  const unknown = await rcall('POST', '/api/auth/login', { body: { email: 'personne@example.com', password: 'pas-le-bon' } });
+  assert.equal(wrong.status, 401);
+  assert.equal(unknown.status, 401);
+  assert.equal(wrong.text, unknown.text, 'même message : on ne révèle pas quelles adresses existent');
+  r = await rcall('POST', '/api/auth/login', { body: { email: 'Alice@Example.com', password: 'motdepasse1' }, headers: { 'user-agent': UA } });
+  assert.equal(r.status, 200, r.text);
+  const alice2 = cookieOf(r);
+  assert.notEqual(alice2, alice);
+  r = await rcall('GET', '/api/auth/sessions', { cookie: alice2 });
+  assert.equal(r.json.length, 2);
+  assert.equal(r.json[0].device, 'Pixel 7');
+  assert.equal(r.json.filter((x) => x.current).length, 1);
+  ok('Connexion (e-mail sans casse), erreurs identiques, appareils listés avec leur nom');
+
+  // Ce que voit une personne ordinaire
+  r = await rcall('GET', '/api/tracks', { cookie: alice });
   assert.equal(r.status, 200);
   assert.ok(r.json.length > 0);
-  assert.match((await rcall('GET', '/album/3', { cookie: phone })).text, /<title>test<\/title>/);
-  r = await rcall('GET', `/api/stream/${r.json[0].id}`, { cookie: phone, headers: { range: 'bytes=0-99' } });
-  assert.equal(r.status, 206);
-  r = await rcall('GET', '/api/settings', { cookie: phone });
+  const aTrack = r.json[0].id;
+  const bTrack = r.json[1].id;
+  assert.equal((await rcall('GET', `/api/stream/${aTrack}`, { cookie: alice, headers: { range: 'bytes=0-99' } })).status, 206);
+  r = await rcall('GET', '/api/settings', { cookie: alice });
   assert.equal(r.json.local, false);
-  assert.equal(r.json.deviceName, 'Pixel 7');
   assert.deepEqual(r.json.musicDirs, []);
   assert.equal(r.json.dataDir, '');
+  assert.equal(r.json.uploadsDir, '');
   assert.equal(r.json.canBrowse, false);
-  r = await rcall('POST', '/api/playlists', { cookie: phone, body: { name: 'Depuis le téléphone' } });
-  assert.equal(r.status, 200);
-  await rcall('DELETE', `/api/playlists/${r.json.id}`, { cookie: phone });
-  assert.equal((await rcall('PUT', '/api/favorites/1', { cookie: phone, headers: { origin: 'https://evil.example' } })).status, 403);
-  ok('Appareil associé : bibliothèque, lecture (Range), playlists ; réglages du PC masqués ; origine étrangère refusée');
+  assert.equal((await rcall('PUT', '/api/favorites/1', { cookie: alice, headers: { origin: 'https://evil.example' } })).status, 403);
+  ok('Personne ordinaire : bibliothèque et lecture (Range) ; réglages du serveur masqués ; origine étrangère refusée');
 
-  // Envoi d'un fichier audio depuis le téléphone
+  for (const [m, u, b] of [
+    ['PUT', '/api/settings', { musicDirs: [] }],
+    ['PUT', '/api/autostart', { enabled: true }],
+    ['GET', '/api/autostart', undefined],
+    ['POST', '/api/scan', {}],
+    ['POST', '/api/shutdown', undefined],
+    ['POST', '/api/settings/browse', undefined],
+    ['POST', '/api/update/check', undefined],
+    ['GET', '/api/remote', undefined],
+    ['PUT', '/api/remote', { enabled: false }],
+    ['GET', '/api/admin/users', undefined],
+    ['POST', '/api/admin/users', { email: 'z@example.com', password: 'motdepasse1' }],
+    ['PUT', '/api/admin/signup', { open: false }],
+    ['PATCH', '/api/admin/users/1', { isAdmin: false }],
+    ['POST', '/api/admin/users/1/reset', undefined],
+    ['DELETE', '/api/admin/users/1', undefined],
+  ]) {
+    assert.equal((await rcall(m, u, { cookie: alice, body: b })).status, 403, `${m} ${u}`);
+  }
+  assert.equal((await get('/api/remote')).json.running, true, 'le serveur tourne toujours');
+  ok('Dossiers, analyse, arrêt, mises à jour, accès réseau et comptes : refusés à une personne ordinaire');
+
+  // Données personnelles
+  r = await call('POST', '/api/playlists', { name: 'Playlist admin' });
+  const adminPl = r.json.id;
+  await call('POST', `/api/playlists/${adminPl}/tracks`, { trackIds: [aTrack] });
+  await call('PUT', `/api/favorites/${aTrack}`);
+  await call('POST', '/api/plays', { trackId: aTrack });
+  await call('POST', '/api/plays', { trackId: aTrack });
+  r = await rcall('POST', '/api/playlists', { cookie: alice, body: { name: 'Playlist Alice' } });
+  const alicePl = r.json.id;
+  assert.notEqual(alicePl, adminPl);
+  assert.deepEqual((await rcall('GET', '/api/playlists', { cookie: alice })).json.map((p) => p.name), ['Playlist Alice']);
+  assert.ok(!(await get('/api/playlists')).json.some((p) => p.name === 'Playlist Alice'));
+  for (const [m, u, b] of [
+    ['GET', `/api/playlists/${adminPl}`],
+    ['PATCH', `/api/playlists/${adminPl}`, { name: 'piraté' }],
+    ['POST', `/api/playlists/${adminPl}/tracks`, { trackIds: [bTrack] }],
+    ['DELETE', `/api/playlists/${adminPl}`],
+  ]) {
+    assert.equal((await rcall(m, u, { cookie: alice, body: b })).status, 404, `${m} ${u}`);
+  }
+  assert.equal((await get(`/api/playlists/${adminPl}`)).json.name, 'Playlist admin');
+  assert.equal((await rcall('GET', '/api/favorites/ids', { cookie: alice })).json.length, 0);
+  assert.equal((await rcall('GET', '/api/home', { cookie: alice })).json.favoriteCount, 0);
+  assert.deepEqual((await rcall('GET', '/api/home', { cookie: alice })).json.mostPlayed, []);
+  await rcall('POST', '/api/plays', { cookie: alice, body: { trackId: aTrack } });
+  const countFor = async (cookie) => (await rcall('POST', '/api/tracks/batch', { cookie, body: { ids: [aTrack] } })).json[0].playCount;
+  assert.equal(await countFor(alice), 1);
+  assert.equal(await countFor(adminCk), 2, 'les écoutes de chacun restent séparées');
+  assert.ok((await get('/api/favorites/ids')).json.includes(aTrack));
+  ok('Playlists, favoris et écoutes : propres à chaque personne (la playlist d\'un autre est introuvable)');
+
+  // Envoi d'un fichier audio (réservé à l'administrateur)
   const findAudio = (d) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const f = path.join(d, e.name);
@@ -446,13 +551,13 @@ try {
   };
   const sample = fs.readFileSync(findAudio(libDir));
   const uploadsDir = path.join(dataDir, 'Importations');
-  const upload = (name, data, { cookie = phone, mb = true } = {}) =>
+  const upload = (name, data, { cookie = adminCk, mb = true } = {}) =>
     fetch(`${rbase}/api/upload?name=${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/octet-stream', ...(mb ? { 'x-mb': '1' } : {}), ...(cookie ? { cookie } : {}) },
       body: data,
     }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => undefined) }));
-  const before = (await rcall('GET', '/api/tracks', { cookie: phone })).json.length;
+  const before = (await rcall('GET', '/api/tracks', { cookie: adminCk })).json.length;
   r = await upload('Mon envoi.mp3', sample);
   assert.equal(r.status, 201, JSON.stringify(r.json));
   assert.equal(r.json.duplicate, false);
@@ -460,11 +565,11 @@ try {
   const up1 = r.json.track;
   assert.ok(fs.existsSync(path.join(uploadsDir, 'Mon envoi.mp3')), 'le fichier arrive dans le dossier réservé');
   assert.deepEqual(fs.readdirSync(uploadsDir).filter((f) => f.endsWith('.part')), []);
-  assert.equal((await rcall('GET', '/api/tracks', { cookie: phone })).json.length, before + 1);
-  assert.equal((await rcall('GET', `/api/stream/${up1.id}`, { cookie: phone, headers: { range: 'bytes=0-99' } })).status, 206);
+  assert.equal((await rcall('GET', '/api/tracks', { cookie: adminCk })).json.length, before + 1);
+  assert.equal((await rcall('GET', `/api/stream/${up1.id}`, { cookie: adminCk, headers: { range: 'bytes=0-99' } })).status, 206);
   assert.deepEqual((await get('/api/settings')).json.musicDirs.filter((d) => d.includes('Envois')), [], 'pas dans les dossiers de musique');
   assert.equal((await get('/api/settings')).json.uploadsDir, uploadsDir);
-  assert.equal((await rcall('GET', '/api/settings', { cookie: phone })).json.uploadsDir, '');
+  assert.equal((await rcall('GET', '/api/settings', { cookie: alice })).json.uploadsDir, '');
   ok('Envoi depuis le téléphone : fichier rangé dans « Importations », titre analysé, lisible, hors dossiers de musique');
 
   r = await upload('Mon envoi.mp3', sample);
@@ -490,69 +595,144 @@ try {
 
   assert.equal((await upload('x.mp3', sample, { cookie: null })).status, 401);
   assert.equal((await upload('x.mp3', sample, { mb: false })).status, 403);
-  ok('Envoi refusé sans appareil associé ni en-tête x-mb');
+  r = await upload('x.mp3', sample, { cookie: alice });
+  assert.equal(r.status, 403, 'l\'import est réservé à l\'administrateur');
+  ok('Envoi refusé sans connexion, à une personne ordinaire, et sans en-tête x-mb');
 
-  // Actions réservées au PC
+  console.log('Administration des comptes');
+  r = await get('/api/admin/users');
+  assert.equal(r.json.users.length, 2);
+  assert.equal(r.json.signupOpen, true);
+  const aliceRow = r.json.users.find((u) => u.email === 'alice@example.com');
+  assert.equal(aliceRow.playlistCount, 1);
+  assert.equal(aliceRow.sessionCount, 2);
+  const adminId = r.json.users.find((u) => u.isAdmin).id;
+  assert.equal(r.json.users[0].isAdmin, true, 'l\'administrateur est listé en premier');
+  ok('Liste des comptes : 2 comptes, playlists et appareils comptés');
+
+  // Inscriptions fermées
+  r = await call('PUT', '/api/admin/signup', { open: false });
+  assert.equal(r.json.signupOpen, false);
+  r = await rcall('POST', '/api/auth/register', { body: { email: 'intrus@example.com', password: 'motdepasse1' } });
+  assert.equal(r.status, 403);
+  assert.equal((await rcall('GET', '/api/auth/state')).json.signupOpen, false);
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'motdepasse1' } })).status, 200);
+  ok('Inscriptions fermées : nouveaux comptes refusés, les comptes existants se connectent toujours');
+
+  // Compte créé par l'administrateur : mot de passe provisoire
+  r = await call('POST', '/api/admin/users', { email: 'bob@example.com', name: 'Bob', password: 'provisoire1' });
+  assert.equal(r.status, 201, r.text);
+  assert.equal(r.json.users.length, 3);
+  r = await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: 'provisoire1' } });
+  assert.equal(r.json.user.mustChange, true);
+  const bob = cookieOf(r);
+  r = await rcall('GET', '/api/tracks', { cookie: bob });
+  assert.equal(r.status, 403);
+  assert.equal(r.json.code, 'must_change');
+  assert.equal((await rcall('GET', '/api/auth/state', { cookie: bob })).json.user.mustChange, true);
+  assert.equal((await rcall('POST', '/api/auth/password', { cookie: bob, body: { current: 'faux', next: 'nouveaumdp1' } })).status, 400);
+  assert.equal((await rcall('POST', '/api/auth/password', { cookie: bob, body: { current: 'provisoire1', next: 'court' } })).status, 400);
+  assert.equal((await rcall('POST', '/api/auth/password', { cookie: bob, body: { current: 'provisoire1', next: 'nouveaumdp1' } })).status, 200);
+  assert.equal((await rcall('GET', '/api/tracks', { cookie: bob })).status, 200);
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: 'provisoire1' } })).status, 401);
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: 'nouveaumdp1' } })).status, 200);
+  ok('Mot de passe provisoire : tout est bloqué tant qu\'il n\'est pas changé, puis la personne choisit le sien');
+
+  // Mot de passe oublié : l'administrateur le réinitialise
+  const bobId = (await get('/api/admin/users')).json.users.find((u) => u.email === 'bob@example.com').id;
+  r = await call('POST', `/api/admin/users/${bobId}/reset`);
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.json.password, /^[A-Za-z2-9]{10}$/);
+  const temp = r.json.password;
+  assert.equal((await rcall('GET', '/api/tracks', { cookie: bob })).status, 401, 'ses appareils sont déconnectés');
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: 'nouveaumdp1' } })).status, 401);
+  r = await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: temp } });
+  assert.equal(r.json.user.mustChange, true);
+  ok('Réinitialisation : mot de passe provisoire affiché une fois, anciens appareils déconnectés');
+
+  // Désactivation, droits
+  assert.equal((await call('PATCH', `/api/admin/users/${bobId}`, { disabled: true })).status, 200);
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: temp } })).status, 401);
+  assert.equal((await rcall('GET', '/api/auth/state', { cookie: cookieOf(r) })).json.user, null);
+  await call('PATCH', `/api/admin/users/${bobId}`, { disabled: false });
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: temp } })).status, 200);
+  ok('Compte désactivé : connexion et sessions coupées ; réactivé : il se reconnecte');
+
   for (const [m, u, b] of [
-    ['PUT', '/api/settings', { musicDirs: [] }],
-    ['PUT', '/api/autostart', { enabled: true }],
-    ['POST', '/api/scan', {}],
-    ['POST', '/api/shutdown', undefined],
-    ['POST', '/api/settings/browse', undefined],
-    ['GET', '/api/remote', undefined],
-    ['PUT', '/api/remote', { enabled: false }],
-    ['POST', '/api/remote/code', undefined],
-    ['DELETE', '/api/remote/devices/1', undefined],
+    ['PATCH', `/api/admin/users/${adminId}`, { disabled: true }],
+    ['PATCH', `/api/admin/users/${adminId}`, { isAdmin: false }],
+    ['POST', `/api/admin/users/${adminId}/reset`],
+    ['DELETE', `/api/admin/users/${adminId}`],
   ]) {
-    assert.equal((await rcall(m, u, { cookie: phone, body: b })).status, 403, `${m} ${u}`);
+    assert.equal((await call(m, u, b)).status, 409, `${m} ${u}`);
   }
-  assert.equal((await get('/api/remote')).json.running, true, 'le serveur tourne toujours');
-  ok('Dossiers, analyse, arrêt et gestion des appareils refusés depuis le téléphone');
+  assert.equal((await call('PATCH', '/api/admin/users/99999', { disabled: true })).status, 404);
+  ok('L\'administrateur ne peut pas se désactiver, se rétrograder, se réinitialiser ni se supprimer');
 
-  // Gestion côté PC
-  st = (await get('/api/remote')).json;
-  assert.equal(st.devices.length, 1);
-  assert.equal(st.devices[0].name, 'Pixel 7');
-  const second = (await call('POST', '/api/remote/code')).json.pairing.code;
-  assert.notEqual(second, undefined);
-  r = await rcall('POST', '/api/pair', { body: { code: second } });
-  const tablet = cookieOf(r);
-  assert.equal((await get('/api/remote')).json.devices.length, 2);
-  r = await rcall('POST', '/api/session/logout', { cookie: tablet });
+  const aliceId = aliceRow.id;
+  r = await call('PATCH', `/api/admin/users/${aliceId}`, { isAdmin: true });
+  assert.equal(r.status, 200);
+  assert.equal((await rcall('GET', '/api/admin/users', { cookie: alice })).status, 200, 'rôle appliqué sans reconnexion');
+  assert.equal((await rcall('PATCH', `/api/admin/users/${adminId}`, { cookie: alice, body: { isAdmin: false } })).status, 200);
+  assert.equal((await rcall('PATCH', `/api/admin/users/${aliceId}`, { cookie: alice, body: { isAdmin: false } })).status, 409);
+  await rcall('PATCH', `/api/admin/users/${adminId}`, { cookie: alice, body: { isAdmin: true } });
+  assert.equal((await call('PATCH', `/api/admin/users/${aliceId}`, { isAdmin: false })).status, 200);
+  ok('Promotion et rétrogradation d\'un compte');
+
+  // Suppression : les données de la personne disparaissent, pas les autres
+  assert.equal((await call('DELETE', `/api/admin/users/${aliceId}`)).status, 200);
+  assert.equal((await rcall('GET', '/api/tracks', { cookie: alice })).status, 401);
+  assert.equal((await rcall('POST', '/api/auth/login', { body: { email: 'alice@example.com', password: 'motdepasse1' } })).status, 401);
+  assert.ok(!(await get('/api/playlists')).json.some((p) => p.name === 'Playlist Alice'));
+  assert.equal((await get(`/api/playlists/${adminPl}`)).status, 200);
+  assert.equal((await get('/api/admin/users')).json.users.length, 2);
+  ok('Suppression d\'un compte : accès coupé, ses playlists supprimées, celles des autres intactes');
+
+  // Déconnexion
+  r = await rcall('POST', '/api/auth/logout', { cookie: bob });
   assert.equal(r.status, 200);
   assert.match(r.headers.get('set-cookie'), /Max-Age=0/);
-  assert.equal((await rcall('GET', '/api/tracks', { cookie: tablet })).status, 401);
-  assert.equal((await get('/api/remote')).json.devices.length, 1);
-  ok('Un appareil peut se déconnecter lui-même');
-
-  // Désactivation / réactivation : les appareils sont conservés
-  await call('PUT', '/api/remote', { enabled: false });
-  await assert.rejects(() => fetch(rbase + '/api/health'));
-  st = (await get('/api/remote')).json;
-  assert.equal(st.running, false);
-  assert.equal(st.pairing, null);
-  assert.equal(st.devices.length, 1);
-  await call('PUT', '/api/remote', { enabled: true });
-  assert.equal((await rcall('GET', '/api/tracks', { cookie: phone })).status, 200);
-  ok('Désactivation ferme le port, réactivation retrouve l\'appareil associé');
-
-  // Retrait depuis le PC
-  const phoneId = (await get('/api/remote')).json.devices[0].id;
-  assert.equal((await call('DELETE', `/api/remote/devices/${phoneId}`)).status, 200);
-  assert.equal((await rcall('GET', '/api/tracks', { cookie: phone })).status, 401);
-  ok('Retrait d\'un appareil depuis le PC : accès coupé immédiatement');
+  assert.equal((await rcall('GET', '/api/tracks', { cookie: bob })).status, 401);
+  r = await rcall('POST', '/api/auth/login', { body: { email: 'bob@example.com', password: temp } });
+  const bob3 = cookieOf(r);
+  const sessions = (await rcall('GET', '/api/auth/sessions', { cookie: bob3 })).json;
+  assert.ok(sessions.length >= 1);
+  const other = sessions.find((x) => !x.current);
+  if (other) {
+    assert.equal((await rcall('DELETE', `/api/auth/sessions/${other.id}`, { cookie: bob3 })).status, 200);
+  }
+  assert.equal((await rcall('DELETE', `/api/auth/sessions/${aliceRow.id}`, { cookie: bob3 })).status, 404, 'on ne retire pas les appareils des autres');
+  ok('Déconnexion et retrait d\'un appareil');
 
   // Limite d'essais
-  const fresh = (await get('/api/remote')).json.pairing.code;
   let blocked = 0;
-  for (let i = 0; i < 8; i++) {
-    const res = await rcall('POST', '/api/pair', { body: { code: 'BBBB-CCCC' } });
+  for (let i = 0; i < 10; i++) {
+    const res = await rcall('POST', '/api/auth/login', { body: { email: 'cible@example.com', password: 'essai-' + i } });
     if (res.status === 429) blocked++;
   }
   assert.ok(blocked >= 2, 'trop d\'essais ratés → 429');
-  assert.equal((await rcall('POST', '/api/pair', { body: { code: fresh } })).status, 429, 'même le bon code est refusé pendant la pause');
-  ok('Essais de code limités (429 après 6 échecs par minute)');
+  r = await rcall('POST', '/api/auth/login', { body: { email: 'cible@example.com', password: 'essai-final' } });
+  assert.equal(r.status, 429);
+  ok('Essais de connexion limités (429 après 8 échecs sur la même adresse)');
+
+  // Arrêt du réseau
   await call('PUT', '/api/remote', { enabled: false });
+  await assert.rejects(() => fetch(rbase + '/api/health'));
+  assert.equal((await get('/api/remote')).json.running, false);
+  ok('Désactivation : le port se ferme');
+
+  // Arrêt : réservé à l'administrateur, ou au jeton local (installateur)
+  r = await call('POST', '/api/shutdown', undefined, { cookie: bob3 });
+  assert.equal(r.status, 403, 'une personne ordinaire ne peut pas arrêter le serveur');
+  assert.equal((await call('POST', '/api/shutdown', undefined, { cookie: '', 'x-mb-token': 'faux' })).status, 401);
+  const token = fs.readFileSync(path.join(dataDir, 'server.token'), 'utf8').trim();
+  assert.ok(token.length >= 32);
+  assert.equal((await call('POST', '/api/shutdown', undefined, { cookie: '', 'x-mb-token': token, 'x-forwarded-for': '203.0.113.9' })).status, 403);
+  assert.equal((await call('POST', '/api/shutdown', undefined, { cookie: '' })).status, 401);
+  assert.equal((await call('POST', '/api/shutdown', undefined, { cookie: '', 'x-mb-token': token })).status, 200);
+  for (let i = 0; i < 30 && server.exitCode === null; i++) await sleep(100);
+  assert.equal(server.exitCode, 0, 'le serveur s\'est arrêté');
+  ok('Arrêt du serveur : refusé sans droit, accepté avec le jeton local (installateur)');
 
   console.log(`\n${passed} vérifications réussies.`);
 } catch (e) {

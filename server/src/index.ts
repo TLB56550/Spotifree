@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
 import { HOST, PORT, REMOTE_PORT, VERSION, resolveDataDir, resolvePublicDir } from './config';
+import { Auth, checkPassword, cleanName, normalizeEmail } from './auth';
 import { ensureLaunchers, openAppWindow } from './desktop';
 import { getMusicDirs, openDb } from './db';
 import { RemoteAccess } from './remote';
@@ -39,7 +41,30 @@ const quit = (code: number): Promise<void> => {
   return app.close().finally(() => process.exit(code));
 };
 const updater = new Updater(dataDir, log, () => quit(EXIT_RESTART));
-registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, updater, publicDir, host: HOST, port: PORT, remote });
+const auth = new Auth(db);
+const localToken = crypto.randomBytes(24).toString('hex');
+try {
+  fs.writeFileSync(path.join(dataDir, 'server.token'), localToken, { mode: 0o600 });
+} catch {
+  // Sans ce fichier, seul un administrateur connecté peut arrêter le serveur (l'installateur le demandera à la main).
+}
+registerRoutes(app, { db, scanner, dataDir, coversDir, uploadsDir, updater, publicDir, host: HOST, port: PORT, remote, auth, localToken });
+
+// Serveur sans écran (NAS, Docker) : le premier administrateur peut être créé depuis l'environnement.
+if (!auth.hasUsers() && process.env.MB_ADMIN_EMAIL && process.env.MB_ADMIN_PASSWORD) {
+  try {
+    const email = normalizeEmail(process.env.MB_ADMIN_EMAIL);
+    await auth.createUser({
+      email,
+      name: cleanName(process.env.MB_ADMIN_NAME, email),
+      password: checkPassword(process.env.MB_ADMIN_PASSWORD),
+      isAdmin: true,
+    });
+    log(`Compte administrateur créé : ${email}`);
+  } catch (e) {
+    log(`Compte administrateur non créé : ${errMsg(e)}`);
+  }
+}
 
 const url = `http://127.0.0.1:${PORT}`;
 
@@ -69,6 +94,7 @@ try {
 
 log(`Ma Bibliothèque ${VERSION} est prête : ${url}`);
 log(`Données : ${dataDir}`);
+if (!auth.hasUsers()) log("Aucun compte pour l'instant : ouvre l'application sur ce PC pour créer le compte administrateur.");
 if (!publicDir) log("Attention : l'interface (dossier « public ») est introuvable.");
 if (process.env.OPEN_BROWSER === '1') openAppWindow(url);
 await remote.init();

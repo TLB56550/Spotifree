@@ -9,7 +9,7 @@ interface Autostart {
   enabled: boolean;
 }
 
-/** Réglages > Serveur (depuis le PC) : le serveur tourne à part du lecteur, il reste allumé quand on ferme la fenêtre. */
+/** Administration > Serveur : le serveur tourne à part du lecteur, il reste allumé quand on ferme la fenêtre. */
 export function ServerSection({ onShutdown }: { onShutdown: () => void }) {
   const { data } = useQuery({ queryKey: ['autostart'], queryFn: () => api.get<Autostart>('/api/autostart') });
 
@@ -26,8 +26,8 @@ export function ServerSection({ onShutdown }: { onShutdown: () => void }) {
     <section className="setting-block">
       <h2>Serveur</h2>
       <p className="muted">
-        Le serveur garde ta bibliothèque et envoie la musique à tes téléphones. Il tourne en arrière-plan, séparé de cette fenêtre (le lecteur) :
-        tu peux fermer la fenêtre, le serveur reste allumé. Pour rouvrir le lecteur, utilise le raccourci « Ma Bibliothèque ».
+        Le serveur garde la bibliothèque et envoie la musique à tous les appareils connectés. Il tourne en arrière-plan, séparé du lecteur :
+        tu peux fermer la fenêtre du lecteur, le serveur reste allumé. Pour rouvrir le lecteur, utilise le raccourci « Ma Bibliothèque ».
       </p>
       {data?.available && (
         <label className="check-row">

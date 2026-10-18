@@ -69,10 +69,24 @@ function install(name) {
   fs.writeFileSync(path.join(dir, 'app', 'public', 'assets', 'ancien-fichier.js'), '1');
   return dir;
 }
+let cookie = null;
+// Les routes de mise à jour demandent un compte : le serveur de test crée un administrateur au démarrage.
+async function session() {
+  if (cookie) return cookie;
+  const r = await fetch(`http://127.0.0.1:${PORT}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'x-mb': '1', 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@example.com', password: 'motdepasse-test' }),
+  });
+  const set = /mb_session=[^;]+/.exec(r.headers.get('set-cookie') ?? '');
+  if (!set) throw new Error('connexion impossible : ' + r.status);
+  return (cookie = set[0]);
+}
 function start(dir, extraEnv = {}) {
+  cookie = null;
   const dataDir = path.join(tmp, 'data-' + path.basename(dir));
   const child = spawn('node', ['--no-warnings', path.join(dir, 'app', 'server.mjs')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), UPDATE_API_URL: `http://127.0.0.1:${fake.address().port}/releases`, ...extraEnv },
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), MB_ADMIN_EMAIL: 'admin@example.com', MB_ADMIN_PASSWORD: 'motdepasse-test', UPDATE_API_URL: `http://127.0.0.1:${fake.address().port}/releases`, ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const out = { logs: '', code: undefined };
@@ -82,7 +96,7 @@ function start(dir, extraEnv = {}) {
   out.child = child;
   return out;
 }
-const status = async () => (await fetch(`http://127.0.0.1:${PORT}/api/update`)).json();
+const status = async () => (await fetch(`http://127.0.0.1:${PORT}/api/update`, { headers: { cookie: await session() } })).json();
 async function until(fn, ms = 20000) {
   const end = Date.now() + ms;
   for (;;) {
@@ -170,7 +184,7 @@ try {
 
   // 5. Recherche manuelle depuis le PC ; refusée depuis un autre appareil n'est pas testable ici (voir smoke-test)
   const callsBefore = apiCalls;
-  const r = await fetch(`http://127.0.0.1:${PORT}/api/update/check`, { method: 'POST', headers: { 'x-mb': '1' } });
+  const r = await fetch(`http://127.0.0.1:${PORT}/api/update/check`, { method: 'POST', headers: { 'x-mb': '1', cookie: await session() } });
   assert.equal(r.status, 200);
   await until(() => apiCalls > callsBefore);
   ok('Recherche manuelle : relance la vérification');

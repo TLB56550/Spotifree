@@ -33,6 +33,8 @@ const env = (dir, extra = {}) => ({
   DATA_DIR: path.join(tmp, 'data-' + path.basename(dir)),
   PORT: String(PORT),
   UPDATE_DISABLED: '1',
+  MB_ADMIN_EMAIL: 'admin@example.com',
+  MB_ADMIN_PASSWORD: 'motdepasse-test',
   MB_PLAYER_DRY: '1',
   MB_STARTUP_DIR: path.join(tmp, 'startup-' + path.basename(dir)),
   ...extra,
@@ -46,8 +48,29 @@ const health = async () => {
     return null;
   }
 };
-const call = (method, url, body) =>
-  fetch(base + url, { method, headers: { 'x-mb': '1', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+// Jeton local écrit par le serveur : c'est lui qui permet de fermer le serveur sans compte (comme l'installateur).
+const localToken = () => {
+  const files = fs
+    .readdirSync(tmp)
+    .map((d) => path.join(tmp, d, 'server.token'))
+    .filter((f) => fs.existsSync(f))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return files.length ? fs.readFileSync(files[0], 'utf8').trim() : '';
+};
+async function login() {
+  const r = await fetch(base + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'x-mb': '1', 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@example.com', password: 'motdepasse-test' }),
+  });
+  return /mb_session=[^;]+/.exec(r.headers.get('set-cookie') ?? '')?.[0] ?? '';
+}
+const call = async (method, url, body) =>
+  fetch(base + url, {
+    method,
+    headers: { 'x-mb': '1', 'x-mb-token': localToken(), cookie: await login(), ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
 async function until(fn, ms = 20000) {
   const end = Date.now() + ms;
   for (;;) {

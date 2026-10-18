@@ -13,6 +13,7 @@ import { FolderManager, ScanProgress, useSettings } from '../components/Folders'
 import { PlayButton } from '../components/Controls';
 import { TrackList } from '../components/TrackList';
 import { Skeleton } from '../components/Hero';
+import { useIsAdmin } from '../lib/auth';
 import { InstallHint } from '../components/InstallHint';
 
 function QuickTile({ to, cover, title, source }: { to: string; cover: React.ReactNode; title: string; source: Source }) {
@@ -33,19 +34,20 @@ function QuickTile({ to, cover, title, source }: { to: string; cover: React.Reac
 
 function Onboarding() {
   const { data: settings } = useSettings();
-  if (settings && !settings.local) {
-    return (
-      <div className="onboarding">
-        <h1>La bibliothèque est vide</h1>
-        <p>Aucun titre n’a encore été trouvé sur ton PC. Ouvre Ma Bibliothèque sur le PC, dans Paramètres, pour choisir le dossier de ta musique.</p>
-      </div>
-    );
-  }
+  const admin = useIsAdmin();
   const { data: scan } = useQuery({
     queryKey: ['scan'],
     queryFn: () => api.get<ScanStatus>('/api/scan'),
     refetchInterval: (q) => (q.state.data?.running ? 1000 : 4000),
   });
+  if (!admin) {
+    return (
+      <div className="onboarding">
+        <h1>La bibliothèque est vide</h1>
+        <p>Aucun titre n’a encore été ajouté. L’administrateur doit d’abord choisir le dossier de musique du serveur : reviens un peu plus tard.</p>
+      </div>
+    );
+  }
   const hasFolders = (settings?.musicDirs.length ?? 0) > 0;
   return (
     <div className="onboarding">

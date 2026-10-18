@@ -19,8 +19,11 @@ type Params = (string | number | null)[];
 
 const TRACK_COLS = `t.id, t.title, t.artist, t.album_id AS albumId, al.title AS album, t.artist_id AS artistId,
   ar.name AS albumArtist, t.track_no AS trackNo, t.disc_no AS discNo, t.year, t.genre, t.duration,
-  COALESCE(t.cover_key, al.cover_key) AS cover, t.format, t.added_at AS addedAt, t.play_count AS playCount`;
-const TRACK_FROM = `FROM tracks t JOIN albums al ON al.id = t.album_id JOIN artists ar ON ar.id = t.artist_id`;
+  COALESCE(t.cover_key, al.cover_key) AS cover, t.format, t.added_at AS addedAt, COALESCE(ut.play_count, 0) AS playCount`;
+/** Les écoutes sont propres à chaque personne : `uid` est un entier issu de la base (jamais une saisie). */
+const trackFrom = (uid: number) =>
+  `FROM tracks t JOIN albums al ON al.id = t.album_id JOIN artists ar ON ar.id = t.artist_id
+   LEFT JOIN user_tracks ut ON ut.track_id = t.id AND ut.user_id = ${Math.trunc(uid)}`;
 const ALBUM_ORDER = 'ar.key, al.year, al.title, t.disc_no, t.track_no, t.title';
 
 const ALBUM_SELECT = `SELECT al.id, al.title, ar.name AS artist, al.artist_id AS artistId, al.year,
@@ -51,7 +54,7 @@ export interface TrackFilter {
   sort?: 'title' | 'album';
 }
 
-export function listTracks(db: DB, f: TrackFilter = {}): Track[] {
+export function listTracks(db: DB, uid: number, f: TrackFilter = {}): Track[] {
   const where: string[] = [];
   const params: Params = [];
   if (f.genre) {
@@ -67,15 +70,15 @@ export function listTracks(db: DB, f: TrackFilter = {}): Track[] {
     params.push(f.albumId);
   }
   const order = f.sort === 'title' ? 't.title COLLATE NOCASE, ar.key' : ALBUM_ORDER;
-  const sql = `SELECT ${TRACK_COLS} ${TRACK_FROM} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${order}`;
+  const sql = `SELECT ${TRACK_COLS} ${trackFrom(uid)} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${order}`;
   return rows<Track>(db, sql, params).map(plain);
 }
 
-export function tracksByIds(db: DB, ids: number[]): Track[] {
+export function tracksByIds(db: DB, uid: number, ids: number[]): Track[] {
   if (!ids.length) return [];
   const found = rows<Track>(
     db,
-    `SELECT ${TRACK_COLS} ${TRACK_FROM} WHERE t.id IN (SELECT value FROM json_each(?))`,
+    `SELECT ${TRACK_COLS} ${trackFrom(uid)} WHERE t.id IN (SELECT value FROM json_each(?))`,
     [JSON.stringify(ids)],
   );
   const byId = new Map(found.map((t) => [t.id, plain(t)]));
@@ -90,11 +93,14 @@ export function coverMime(db: DB, key: string): string | undefined {
   return one<{ mime: string }>(db, 'SELECT mime FROM covers WHERE key = ?', [key])?.mime;
 }
 
-export function recordPlay(db: DB, trackId: number): void {
+export function recordPlay(db: DB, uid: number, trackId: number): void {
   const now = Date.now();
-  const res = db.prepare('UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE id = ?').run(now, trackId);
-  if (Number(res.changes) === 0) throw new HttpError(404, 'Titre introuvable');
-  db.prepare('INSERT INTO plays (track_id, played_at) VALUES (?, ?)').run(trackId, now);
+  if (!one(db, 'SELECT 1 AS x FROM tracks WHERE id = ?', [trackId])) throw new HttpError(404, 'Titre introuvable');
+  db.prepare(
+    `INSERT INTO user_tracks (user_id, track_id, play_count, last_played) VALUES (?, ?, 1, ?)
+     ON CONFLICT(user_id, track_id) DO UPDATE SET play_count = play_count + 1, last_played = excluded.last_played`,
+  ).run(uid, trackId, now);
+  db.prepare('INSERT INTO plays (track_id, played_at, user_id) VALUES (?, ?, ?)').run(trackId, now, uid);
 }
 
 // ---------------------------------------------------------------- albums
@@ -109,12 +115,12 @@ export function listAlbums(db: DB, sort: string = 'title'): Album[] {
   return rows<Album>(db, `${ALBUM_SELECT} GROUP BY al.id ORDER BY ${order}`).map(plain);
 }
 
-export function getAlbum(db: DB, id: number): AlbumDetail | undefined {
+export function getAlbum(db: DB, uid: number, id: number): AlbumDetail | undefined {
   const album = one<Album>(db, `${ALBUM_SELECT} WHERE al.id = ? GROUP BY al.id`, [id]);
   if (!album) return undefined;
   const tracks = rows<Track>(
     db,
-    `SELECT ${TRACK_COLS} ${TRACK_FROM} WHERE t.album_id = ? ORDER BY t.disc_no, t.track_no, t.title`,
+    `SELECT ${TRACK_COLS} ${trackFrom(uid)} WHERE t.album_id = ? ORDER BY t.disc_no, t.track_no, t.title`,
     [id],
   ).map(plain);
   return { ...album, tracks };
@@ -127,7 +133,7 @@ export function listArtists(db: DB): Artist[] {
     ORDER BY ar.name COLLATE NOCASE`).map(plain);
 }
 
-export function getArtist(db: DB, id: number): ArtistDetail | undefined {
+export function getArtist(db: DB, uid: number, id: number): ArtistDetail | undefined {
   const artist = one<Artist>(db, `${ARTIST_SELECT} WHERE ar.id = ?`, [id]);
   if (!artist) return undefined;
   const albums = rows<Album>(db, `${ALBUM_SELECT} WHERE al.artist_id = ? GROUP BY al.id ORDER BY al.year DESC, al.title`, [
@@ -135,8 +141,8 @@ export function getArtist(db: DB, id: number): ArtistDetail | undefined {
   ]).map(plain);
   const topTracks = rows<Track>(
     db,
-    `SELECT ${TRACK_COLS} ${TRACK_FROM} WHERE t.artist_id = ?
-     ORDER BY t.play_count DESC, al.year DESC, al.title, t.disc_no, t.track_no LIMIT 10`,
+    `SELECT ${TRACK_COLS} ${trackFrom(uid)} WHERE t.artist_id = ?
+     ORDER BY COALESCE(ut.play_count, 0) DESC, al.year DESC, al.title, t.disc_no, t.track_no LIMIT 10`,
     [id],
   ).map(plain);
   return { ...artist, albums, topTracks };
@@ -177,17 +183,17 @@ function withCovers(db: DB, p: Omit<Playlist, 'covers'>): Playlist {
   return { ...p, covers };
 }
 
-export function listPlaylists(db: DB, limit?: number): Playlist[] {
-  const sql = `${PLAYLIST_SELECT} ORDER BY p.updated_at DESC, p.id DESC ${limit ? 'LIMIT ' + Math.floor(limit) : ''}`;
-  return rows<Omit<Playlist, 'covers'>>(db, sql).map((p) => withCovers(db, plain(p)));
+export function listPlaylists(db: DB, uid: number, limit?: number): Playlist[] {
+  const sql = `${PLAYLIST_SELECT} WHERE p.user_id = ? ORDER BY p.updated_at DESC, p.id DESC ${limit ? 'LIMIT ' + Math.floor(limit) : ''}`;
+  return rows<Omit<Playlist, 'covers'>>(db, sql, [uid]).map((p) => withCovers(db, plain(p)));
 }
 
-export function getPlaylist(db: DB, id: number): PlaylistDetail | undefined {
-  const p = one<Omit<Playlist, 'covers'>>(db, `${PLAYLIST_SELECT} WHERE p.id = ?`, [id]);
+export function getPlaylist(db: DB, uid: number, id: number): PlaylistDetail | undefined {
+  const p = one<Omit<Playlist, 'covers'>>(db, `${PLAYLIST_SELECT} WHERE p.id = ? AND p.user_id = ?`, [id, uid]);
   if (!p) return undefined;
   const tracks = rows<PlaylistTrack>(
     db,
-    `SELECT ${TRACK_COLS}, pt.id AS entryId ${TRACK_FROM.replace('FROM tracks t', 'FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id')}
+    `SELECT ${TRACK_COLS}, pt.id AS entryId ${trackFrom(uid).replace('FROM tracks t', 'FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id')}
      WHERE pt.playlist_id = ? ORDER BY pt.position, pt.id`,
     [id],
   ).map(plain);
@@ -198,33 +204,34 @@ function touchPlaylist(db: DB, id: number): void {
   db.prepare('UPDATE playlists SET updated_at = ? WHERE id = ?').run(Date.now(), id);
 }
 
-function mustExist(db: DB, id: number): void {
-  if (!one(db, 'SELECT 1 AS x FROM playlists WHERE id = ?', [id])) throw new HttpError(404, 'Playlist introuvable');
+/** Une playlist n'est visible que par la personne qui l'a créée. */
+function mustExist(db: DB, uid: number, id: number): void {
+  if (!one(db, 'SELECT 1 AS x FROM playlists WHERE id = ? AND user_id = ?', [id, uid])) throw new HttpError(404, 'Playlist introuvable');
 }
 
-export function createPlaylist(db: DB, name: string, description = ''): number {
+export function createPlaylist(db: DB, uid: number, name: string, description = ''): number {
   const now = Date.now();
   const res = db
-    .prepare('INSERT INTO playlists (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)')
-    .run(name, description, now, now);
+    .prepare('INSERT INTO playlists (name, description, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)')
+    .run(name, description, now, now, uid);
   return Number(res.lastInsertRowid);
 }
 
-export function updatePlaylist(db: DB, id: number, patch: { name?: string; description?: string }): void {
-  mustExist(db, id);
+export function updatePlaylist(db: DB, uid: number, id: number, patch: { name?: string; description?: string }): void {
+  mustExist(db, uid, id);
   if (patch.name !== undefined) db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(patch.name, id);
   if (patch.description !== undefined)
     db.prepare('UPDATE playlists SET description = ? WHERE id = ?').run(patch.description, id);
   touchPlaylist(db, id);
 }
 
-export function deletePlaylist(db: DB, id: number): void {
-  mustExist(db, id);
+export function deletePlaylist(db: DB, uid: number, id: number): void {
+  mustExist(db, uid, id);
   db.prepare('DELETE FROM playlists WHERE id = ?').run(id);
 }
 
-export function addToPlaylist(db: DB, id: number, trackIds: number[]): number {
-  mustExist(db, id);
+export function addToPlaylist(db: DB, uid: number, id: number, trackIds: number[]): number {
+  mustExist(db, uid, id);
   return tx(db, () => {
     const last = one<{ m: number | null }>(db, 'SELECT MAX(position) AS m FROM playlist_tracks WHERE playlist_id = ?', [id]);
     let position = (last?.m ?? -1) + 1;
@@ -245,14 +252,14 @@ export function addToPlaylist(db: DB, id: number, trackIds: number[]): number {
   });
 }
 
-export function removeFromPlaylist(db: DB, id: number, entryId: number): void {
-  mustExist(db, id);
+export function removeFromPlaylist(db: DB, uid: number, id: number, entryId: number): void {
+  mustExist(db, uid, id);
   db.prepare('DELETE FROM playlist_tracks WHERE id = ? AND playlist_id = ?').run(entryId, id);
   touchPlaylist(db, id);
 }
 
-export function reorderPlaylist(db: DB, id: number, entryIds: number[]): void {
-  mustExist(db, id);
+export function reorderPlaylist(db: DB, uid: number, id: number, entryIds: number[]): void {
+  mustExist(db, uid, id);
   const current = rows<{ id: number }>(db, 'SELECT id FROM playlist_tracks WHERE playlist_id = ?', [id]).map((r) => r.id);
   const same =
     current.length === entryIds.length &&
@@ -268,61 +275,66 @@ export function reorderPlaylist(db: DB, id: number, entryIds: number[]): void {
 
 // ------------------------------------------------------------- favoris
 
-export function favoriteIds(db: DB): number[] {
-  return rows<{ track_id: number }>(db, 'SELECT track_id FROM favorites ORDER BY added_at DESC').map((r) => r.track_id);
+export function favoriteIds(db: DB, uid: number): number[] {
+  return rows<{ track_id: number }>(db, 'SELECT track_id FROM favorites WHERE user_id = ? ORDER BY added_at DESC', [uid]).map(
+    (r) => r.track_id,
+  );
 }
 
-export function listFavorites(db: DB): Track[] {
+export function listFavorites(db: DB, uid: number): Track[] {
   return rows<Track>(
     db,
-    `SELECT ${TRACK_COLS} ${TRACK_FROM.replace('FROM tracks t', 'FROM favorites f JOIN tracks t ON t.id = f.track_id')}
-     ORDER BY f.added_at DESC`,
+    `SELECT ${TRACK_COLS} ${trackFrom(uid).replace('FROM tracks t', 'FROM favorites f JOIN tracks t ON t.id = f.track_id')}
+     WHERE f.user_id = ? ORDER BY f.added_at DESC`,
+    [uid],
   ).map(plain);
 }
 
-export function setFavorite(db: DB, trackId: number, on: boolean): void {
+export function setFavorite(db: DB, uid: number, trackId: number, on: boolean): void {
   if (on) {
     const res = db
-      .prepare('INSERT OR IGNORE INTO favorites (track_id, added_at) SELECT id, ? FROM tracks WHERE id = ?')
-      .run(Date.now(), trackId);
+      .prepare('INSERT OR IGNORE INTO favorites (user_id, track_id, added_at) SELECT ?, id, ? FROM tracks WHERE id = ?')
+      .run(uid, Date.now(), trackId);
     if (Number(res.changes) === 0 && !one(db, 'SELECT 1 AS x FROM tracks WHERE id = ?', [trackId]))
       throw new HttpError(404, 'Titre introuvable');
   } else {
-    db.prepare('DELETE FROM favorites WHERE track_id = ?').run(trackId);
+    db.prepare('DELETE FROM favorites WHERE user_id = ? AND track_id = ?').run(uid, trackId);
   }
 }
 
 // -------------------------------------------------------------- accueil
 
-export function getHome(db: DB): HomeData {
+export function getHome(db: DB, uid: number): HomeData {
+  const u = Math.trunc(uid);
   const recentAlbums = rows<Album>(
     db,
-    `${ALBUM_SELECT} WHERE al.id IN (SELECT album_id FROM tracks WHERE last_played IS NOT NULL
-       GROUP BY album_id ORDER BY MAX(last_played) DESC LIMIT 12)
-     GROUP BY al.id ORDER BY (SELECT MAX(last_played) FROM tracks x WHERE x.album_id = al.id) DESC`,
+    `${ALBUM_SELECT} WHERE al.id IN (SELECT x.album_id FROM user_tracks y JOIN tracks x ON x.id = y.track_id
+       WHERE y.user_id = ${u} AND y.last_played IS NOT NULL GROUP BY x.album_id ORDER BY MAX(y.last_played) DESC LIMIT 12)
+     GROUP BY al.id ORDER BY (SELECT MAX(y.last_played) FROM user_tracks y JOIN tracks x ON x.id = y.track_id
+       WHERE y.user_id = ${u} AND x.album_id = al.id) DESC`,
   ).map(plain);
   const recentlyAdded = rows<Album>(db, `${ALBUM_SELECT} GROUP BY al.id ORDER BY al.added_at DESC, al.id DESC LIMIT 12`).map(plain);
   const discover = rows<Album>(db, `${ALBUM_SELECT} GROUP BY al.id ORDER BY RANDOM() LIMIT 12`).map(plain);
   const mostPlayed = rows<Track>(
     db,
-    `SELECT ${TRACK_COLS} ${TRACK_FROM} WHERE t.play_count > 0 ORDER BY t.play_count DESC, t.last_played DESC LIMIT 10`,
+    `SELECT ${TRACK_COLS} ${trackFrom(uid)} WHERE ut.play_count > 0 ORDER BY ut.play_count DESC, ut.last_played DESC LIMIT 10`,
   ).map(plain);
-  const fav = one<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM favorites');
+  const fav = one<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM favorites WHERE user_id = ?', [uid]);
   return {
     recentAlbums,
     recentlyAdded,
     discover,
     mostPlayed,
-    playlists: listPlaylists(db, 12),
+    playlists: listPlaylists(db, uid, 12),
     favoriteCount: fav?.n ?? 0,
   };
 }
 
-export function getStats(db: DB): Stats {
+export function getStats(db: DB, uid: number): Stats {
   const r = one<Stats>(
     db,
     `SELECT (SELECT COUNT(*) FROM tracks) AS tracks, (SELECT COUNT(*) FROM albums) AS albums,
-       (SELECT COUNT(*) FROM artists) AS artists, (SELECT COUNT(*) FROM playlists) AS playlists,
+       (SELECT COUNT(*) FROM artists) AS artists, (SELECT COUNT(*) FROM playlists WHERE user_id = ${Math.trunc(uid)}) AS playlists,
        (SELECT COALESCE(SUM(duration), 0) FROM tracks) AS duration`,
   );
   return plain(r!);
@@ -330,7 +342,7 @@ export function getStats(db: DB): Stats {
 
 // ------------------------------------------------------------ recherche
 
-export function search(db: DB, query: string): SearchResults {
+export function search(db: DB, uid: number, query: string): SearchResults {
   const tokens = norm(query).split(' ').filter(Boolean);
   if (!tokens.length) return { tracks: [], albums: [], artists: [], playlists: [] };
   const like = (col: string) => tokens.map(() => `${col} LIKE ?`).join(' AND ');
@@ -340,7 +352,7 @@ export function search(db: DB, query: string): SearchResults {
 
   const tracks = rows<Track>(
     db,
-    `SELECT ${TRACK_COLS} ${TRACK_FROM} WHERE ${like('t.search')} LIMIT 300`,
+    `SELECT ${TRACK_COLS} ${trackFrom(uid)} WHERE ${like('t.search')} LIMIT 300`,
     params,
   )
     .map(plain)
@@ -360,7 +372,7 @@ export function search(db: DB, query: string): SearchResults {
     [...params, `${first}%`],
   ).map(plain);
 
-  const playlists = listPlaylists(db).filter((p) => {
+  const playlists = listPlaylists(db, uid).filter((p) => {
     const n = norm(p.name);
     return tokens.every((t) => n.includes(t));
   });

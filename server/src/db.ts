@@ -103,6 +103,57 @@ CREATE TABLE devices (
 );
 `;
 
+const SCHEMA_V3 = `
+CREATE TABLE users (
+  id          INTEGER PRIMARY KEY,
+  email       TEXT NOT NULL UNIQUE,
+  name        TEXT NOT NULL,
+  pass_hash   TEXT NOT NULL,
+  is_admin    INTEGER NOT NULL DEFAULT 0,
+  must_change INTEGER NOT NULL DEFAULT 0,
+  disabled    INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  last_seen   INTEGER
+);
+
+CREATE TABLE sessions (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  device     TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_seen  INTEGER NOT NULL
+);
+CREATE INDEX idx_sessions_user ON sessions(user_id);
+
+DROP TABLE devices;
+
+-- Écoutes par personne (le compteur global de tracks n'est plus utilisé).
+CREATE TABLE user_tracks (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  play_count  INTEGER NOT NULL DEFAULT 0,
+  last_played INTEGER,
+  PRIMARY KEY (user_id, track_id)
+);
+
+-- Les données existantes gardent user_id NULL jusqu'à la création du premier administrateur, qui les reprend.
+ALTER TABLE playlists ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX idx_playlists_user ON playlists(user_id);
+
+ALTER TABLE plays ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+
+CREATE TABLE favorites_v3 (
+  user_id  INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  added_at INTEGER NOT NULL,
+  UNIQUE (user_id, track_id)
+);
+INSERT INTO favorites_v3 (user_id, track_id, added_at) SELECT NULL, track_id, added_at FROM favorites;
+DROP TABLE favorites;
+ALTER TABLE favorites_v3 RENAME TO favorites;
+`;
+
 export function openDb(dataDir: string): DB {
   fs.mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(path.join(dataDir, 'library.db'));
@@ -127,6 +178,23 @@ function migrate(db: DB): void {
       db.exec('PRAGMA user_version = 2');
     });
   }
+  if (row.user_version < 3) {
+    tx(db, () => {
+      db.exec(SCHEMA_V3);
+      db.exec('PRAGMA user_version = 3');
+    });
+  }
+}
+
+/** Rattache les playlists, favoris et écoutes d'avant les comptes au premier administrateur (à appeler dans une transaction). */
+export function adoptLegacyData(db: DB, userId: number): void {
+  db.prepare('UPDATE playlists SET user_id = ? WHERE user_id IS NULL').run(userId);
+  db.prepare('UPDATE favorites SET user_id = ? WHERE user_id IS NULL').run(userId);
+  db.prepare('UPDATE plays SET user_id = ? WHERE user_id IS NULL').run(userId);
+  db.prepare(
+    `INSERT OR IGNORE INTO user_tracks (user_id, track_id, play_count, last_played)
+     SELECT ?, id, play_count, last_played FROM tracks WHERE play_count > 0`,
+  ).run(userId);
 }
 
 /** Exécute `fn` dans une transaction (pas d'`await` à l'intérieur). */

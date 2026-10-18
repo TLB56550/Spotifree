@@ -8,7 +8,8 @@ import { VERSION, defaultMusicDir, isLoopbackHost, isWin } from './config';
 import { getMusicDirs, setSetting, type DB } from './db';
 import * as q from './queries';
 import { autostartStatus, setAutostart } from './desktop';
-import { PAIR_PAGE } from './pairPage';
+import { type Auth, type AuthUser } from './auth';
+import { registerAuthRoutes } from './authRoutes';
 import { isLocalRequest, type RemoteAccess } from './remote';
 import type { Scanner } from './scanner';
 import type { Updater } from './update';
@@ -28,14 +29,19 @@ export interface Ctx {
   host: string;
   port: number;
   remote: RemoteAccess;
+  auth: Auth;
+  /** Jeton écrit dans le dossier des données : permet à l'installateur de fermer le serveur sans compte. */
+  localToken: string;
 }
 
 declare module 'fastify' {
   interface FastifyRequest {
     /** Vrai si la requête vient du PC lui-même. */
     mbLocal: boolean;
-    /** Appareil associé (téléphone) qui fait la requête, s'il y en a un. */
-    mbDevice: { id: number; name: string } | null;
+    /** Personne connectée qui fait la requête, s'il y en a une. */
+    mbUser: AuthUser | null;
+    /** Vrai pour une demande venue du PC avec le jeton local (installateur). */
+    mbSystem: boolean;
   }
 }
 
@@ -139,42 +145,34 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   const loopback = isLoopbackHost(ctx.host);
 
   // ---- Protection
-  // 1. Le PC (127.0.0.1) est de confiance. 2. Tout le reste doit venir d'un appareil associé.
-  // 3. Aucune requête qui modifie quelque chose ne passe sans l'en-tête x-mb et une origine cohérente.
+  // 1. Toute requête vers les données doit venir d'une personne connectée (cookie de session).
+  // 2. Aucune requête qui modifie quelque chose ne passe sans l'en-tête x-mb et une origine cohérente.
+  // 3. « Local » = le PC du serveur : il sert seulement à créer le premier compte et à ouvrir les fenêtres de choix de dossier.
   app.decorateRequest('mbLocal', false);
-  app.decorateRequest('mbDevice', null);
+  app.decorateRequest('mbUser', null);
+  app.decorateRequest('mbSystem', false);
 
+  const requireAdmin = (req: FastifyRequest) => {
+    if (!req.mbUser?.isAdmin) throw new HttpError(403, 'Cette action est réservée à l’administrateur.');
+  };
   const requireLocal = (req: FastifyRequest) => {
-    if (!req.mbLocal) throw new HttpError(403, 'Cette action est réservée au PC.');
+    if (!req.mbLocal) throw new HttpError(403, 'Cette action est réservée au PC du serveur.');
   };
+  const userId = (req: FastifyRequest): number => req.mbUser!.id;
 
-  // Ce que peut charger un appareil qui n'est pas encore associé (sans aucune donnée de musique).
-  const openToVisitors = (method: string, url: string) => {
-    if (url === '/api/health') return method === 'GET' || method === 'HEAD';
-    if (url === '/api/pair') return method === 'POST';
-    if (url.startsWith('/api/')) return false;
-    return (method === 'GET' || method === 'HEAD') && /\.[a-z0-9]{1,12}$/i.test(url); // fichiers de l'interface
-  };
+  // Ce qui reste accessible sans être connecté (aucune donnée de musique).
+  const OPEN_API = new Set(['/api/health', '/api/auth/state', '/api/auth/login', '/api/auth/register', '/api/auth/logout']);
 
   app.addHook('onRequest', async (req, reply) => {
     const url = (req.url ?? '/').split('?')[0] ?? '/';
     const local = isLocalRequest(req.raw, ctx.port);
     req.mbLocal = local;
-    req.mbDevice = null;
+    req.mbUser = null;
+    req.mbSystem = false;
 
-    if (!local) {
-      // Sur le serveur du PC, seule l'adresse « localhost » est admise (protège du « DNS rebinding »).
-      if (req.raw.socket.localPort === ctx.port && loopback) {
-        return reply.code(403).send({ error: 'Adresse non autorisée.' });
-      }
-      if (!ctx.remote.enabled) {
-        return reply.code(403).send({ error: 'L’accès depuis un autre appareil est désactivé.' });
-      }
-      req.mbDevice = ctx.remote.authenticate(req.headers.cookie);
-      if (!req.mbDevice && !openToVisitors(req.method, url)) {
-        if (url.startsWith('/api/')) return reply.code(401).send({ error: 'Appareil non associé.' });
-        return reply.code(200).header('Content-Type', 'text/html; charset=utf-8').header('Cache-Control', 'no-store').send(PAIR_PAGE);
-      }
+    // Sur le serveur du PC, seule l'adresse « localhost » est admise (protège du « DNS rebinding »).
+    if (!local && req.raw.socket.localPort === ctx.port && loopback) {
+      return reply.code(403).send({ error: 'Adresse non autorisée.' });
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -191,6 +189,18 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
       }
       if (req.headers['x-mb'] !== '1') return reply.code(403).send({ error: 'Requête refusée.' });
     }
+
+    req.mbUser = ctx.auth.authenticate(req.headers.cookie);
+    if (local && url === '/api/shutdown' && req.method === 'POST' && req.headers['x-mb-token'] === ctx.localToken) {
+      req.mbSystem = true;
+      return;
+    }
+    if (url.startsWith('/api/') && !OPEN_API.has(url)) {
+      if (!req.mbUser) return reply.code(401).send({ error: 'Connexion requise.', code: 'login' });
+      if (req.mbUser.mustChange && !url.startsWith('/api/auth/')) {
+        return reply.code(403).send({ error: 'Choisis d’abord un nouveau mot de passe.', code: 'must_change' });
+      }
+    }
   });
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
@@ -203,23 +213,28 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   // ---- Général
   app.get('/api/health', async () => ({ ok: true, app: 'ma-bibliotheque', version: VERSION }));
 
-  app.get('/api/settings', async (req): Promise<Settings> => ({
-    // Un téléphone n'a pas à connaître l'organisation des dossiers du PC.
-    musicDirs: req.mbLocal ? getMusicDirs(db) : [],
-    defaultMusicDir: req.mbLocal ? defaultMusicDir() : '',
-    platform: process.platform,
-    dataDir: req.mbLocal ? ctx.dataDir : '',
-    uploadsDir: req.mbLocal ? ctx.uploadsDir : '',
-    version: VERSION,
-    canBrowse: isWin && req.mbLocal,
-    local: req.mbLocal,
-    deviceName: req.mbDevice?.name ?? null,
-  }));
+  registerAuthRoutes(app, ctx, { requireAdmin });
+
+  app.get('/api/settings', async (req): Promise<Settings> => {
+    // Seul l'administrateur connaît l'organisation des dossiers du serveur.
+    const admin = Boolean(req.mbUser?.isAdmin);
+    return {
+      musicDirs: admin ? getMusicDirs(db) : [],
+      defaultMusicDir: admin ? defaultMusicDir() : '',
+      platform: process.platform,
+      dataDir: admin ? ctx.dataDir : '',
+      uploadsDir: admin ? ctx.uploadsDir : '',
+      version: VERSION,
+      canBrowse: isWin && req.mbLocal && admin,
+      local: req.mbLocal,
+    };
+  });
 
   // ---- Envoi d'un fichier audio depuis le téléphone vers le dossier réservé du PC
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
 
   app.post('/api/upload', async (req, reply) => {
+    requireAdmin(req);
     const query = (req.query ?? {}) as { name?: unknown };
     const parsed = safeUploadName(typeof query.name === 'string' ? query.name : '');
     if (!parsed) throw new HttpError(415, 'Format non pris en charge (MP3, FLAC, M4A, AAC, OGG, OPUS ou WAV).');
@@ -236,7 +251,7 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     const sameFile = path.join(ctx.uploadsDir, parsed.base + parsed.ext);
     if (declared > 0 && (await sizeOf(sameFile)) === declared) {
       const known = trackAt(sameFile);
-      const track = known ? q.tracksByIds(db, [known.id])[0] : undefined;
+      const track = known ? q.tracksByIds(db, userId(req), [known.id])[0] : undefined;
       if (track) {
         (stream as NodeJS.ReadableStream & { resume(): void }).resume();
         return { track, duplicate: true };
@@ -277,7 +292,7 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
       const all = db.prepare('SELECT id, path FROM tracks WHERE path LIKE ?').all(`%${path.basename(target)}`) as unknown as { id: number; path: string }[];
       row = all.find((r) => pathKey(r.path) === pathKey(target));
     }
-    const track = row ? q.tracksByIds(db, [row.id])[0] : undefined;
+    const track = row ? q.tracksByIds(db, userId(req), [row.id])[0] : undefined;
     if (!track) {
       await fsp.rm(target, { force: true }).catch(() => {});
       scanner.start();
@@ -288,7 +303,7 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.put('/api/settings', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     const body = (req.body ?? {}) as { musicDirs?: unknown };
     if (!Array.isArray(body.musicDirs)) throw new HttpError(400, 'Liste de dossiers manquante');
     const dirs: string[] = [];
@@ -310,32 +325,33 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post('/api/settings/browse', async (req) => {
+    requireAdmin(req);
     requireLocal(req);
     if (!isWin) throw new HttpError(501, "Le choix d'un dossier n'est pas disponible ici.");
     return { path: await pickFolder() };
   });
 
   app.post('/api/scan', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     const body = (req.body ?? {}) as { full?: boolean };
     return { started: scanner.start({ full: Boolean(body.full) }) };
   });
   app.get('/api/scan', async () => scanner.status);
-  app.get('/api/stats', async () => q.getStats(db));
+  app.get('/api/stats', async (req) => q.getStats(db, userId(req)));
 
   app.get('/api/update', async () => ctx.updater.status());
   app.post('/api/update/check', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     void ctx.updater.check();
     return ctx.updater.status();
   });
 
   app.get('/api/autostart', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     return autostartStatus();
   });
   app.put('/api/autostart', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     const body = (req.body ?? {}) as { enabled?: unknown };
     if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Valeur manquante');
     try {
@@ -347,56 +363,30 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post('/api/shutdown', async (req, reply) => {
-    requireLocal(req);
+    if (!req.mbSystem) requireAdmin(req);
     setTimeout(() => process.exit(0), 300);
     return reply.send({ ok: true });
   });
 
-  // ---- Accès depuis le téléphone
+  // ---- Accès depuis les autres appareils (téléphones…) : réservé à l'administrateur
   app.get('/api/remote', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     return ctx.remote.status();
   });
   app.put('/api/remote', async (req) => {
-    requireLocal(req);
+    requireAdmin(req);
     const body = (req.body ?? {}) as { enabled?: unknown };
     if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Valeur manquante');
     await ctx.remote.setEnabled(body.enabled);
     return ctx.remote.status();
   });
-  app.post('/api/remote/code', async (req) => {
-    requireLocal(req);
-    if (!ctx.remote.running) throw new HttpError(409, "L'accès depuis le téléphone n'est pas activé.");
-    ctx.remote.newCode();
-    return ctx.remote.status();
-  });
-  app.delete('/api/remote/devices/:id', async (req) => {
-    requireLocal(req);
-    ctx.remote.revoke(mustInt((req.params as { id: string }).id));
-    return ctx.remote.status();
-  });
-  app.post('/api/pair', async (req, reply) => {
-    if (req.mbLocal) throw new HttpError(400, 'Cet appareil est le PC : il n’a pas besoin d’être associé.');
-    const body = (req.body ?? {}) as { code?: unknown };
-    const { token, device } = ctx.remote.pair(body.code, req.headers['user-agent']);
-    const secure = req.headers['x-forwarded-proto'] === 'https';
-    reply.header('Set-Cookie', ctx.remote.cookieHeader(token, secure));
-    return { ok: true, device: device.name };
-  });
-  app.post('/api/session/logout', async (req, reply) => {
-    if (req.mbDevice) ctx.remote.revoke(req.mbDevice.id);
-    reply.header('Set-Cookie', ctx.remote.clearCookieHeader());
-    return { ok: true };
-  });
-  // Un appareil déjà associé (ou le PC) qui ouvre /pair est simplement renvoyé vers l'application.
-  app.get('/pair', async (_req, reply) => reply.redirect('/'));
 
   // ---- Bibliothèque
-  app.get('/api/home', async () => q.getHome(db));
+  app.get('/api/home', async (req) => q.getHome(db, userId(req)));
 
   app.get('/api/tracks', async (req) => {
     const query = req.query as Record<string, string | undefined>;
-    return q.listTracks(db, {
+    return q.listTracks(db, userId(req), {
       genre: query.genre || undefined,
       artistId: query.artistId ? mustInt(query.artistId) : undefined,
       albumId: query.albumId ? mustInt(query.albumId) : undefined,
@@ -406,51 +396,51 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.post('/api/tracks/batch', async (req) => {
     const body = (req.body ?? {}) as { ids?: unknown };
-    return q.tracksByIds(db, intList(body.ids, 'Liste de titres'));
+    return q.tracksByIds(db, userId(req), intList(body.ids, 'Liste de titres'));
   });
 
   app.get('/api/albums', async (req) => q.listAlbums(db, (req.query as { sort?: string }).sort));
   app.get('/api/albums/:id', async (req) => {
-    const album = q.getAlbum(db, mustInt((req.params as { id: string }).id));
+    const album = q.getAlbum(db, userId(req), mustInt((req.params as { id: string }).id));
     if (!album) throw new HttpError(404, 'Album introuvable');
     return album;
   });
 
   app.get('/api/artists', async () => q.listArtists(db));
   app.get('/api/artists/:id', async (req) => {
-    const artist = q.getArtist(db, mustInt((req.params as { id: string }).id));
+    const artist = q.getArtist(db, userId(req), mustInt((req.params as { id: string }).id));
     if (!artist) throw new HttpError(404, 'Artiste introuvable');
     return artist;
   });
 
   app.get('/api/genres', async () => q.listGenres(db));
-  app.get('/api/search', async (req) => q.search(db, String((req.query as { q?: string }).q ?? '').slice(0, 100)));
+  app.get('/api/search', async (req) => q.search(db, userId(req), String((req.query as { q?: string }).q ?? '').slice(0, 100)));
 
   // ---- Playlists
-  app.get('/api/playlists', async () => q.listPlaylists(db));
+  app.get('/api/playlists', async (req) => q.listPlaylists(db, userId(req)));
   app.post('/api/playlists', async (req) => {
     const body = (req.body ?? {}) as { name?: unknown; description?: unknown };
     const name = str(body.name, 'Nom');
     const description = typeof body.description === 'string' ? body.description.trim().slice(0, 500) : '';
-    const id = q.createPlaylist(db, name, description);
-    return q.getPlaylist(db, id);
+    const id = q.createPlaylist(db, userId(req), name, description);
+    return q.getPlaylist(db, userId(req), id);
   });
   app.get('/api/playlists/:id', async (req) => {
-    const p = q.getPlaylist(db, mustInt((req.params as { id: string }).id));
+    const p = q.getPlaylist(db, userId(req), mustInt((req.params as { id: string }).id));
     if (!p) throw new HttpError(404, 'Playlist introuvable');
     return p;
   });
   app.patch('/api/playlists/:id', async (req) => {
     const id = mustInt((req.params as { id: string }).id);
     const body = (req.body ?? {}) as { name?: unknown; description?: unknown };
-    q.updatePlaylist(db, id, {
+    q.updatePlaylist(db, userId(req), id, {
       name: body.name !== undefined ? str(body.name, 'Nom') : undefined,
       description: typeof body.description === 'string' ? body.description.trim().slice(0, 500) : undefined,
     });
-    return q.getPlaylist(db, id);
+    return q.getPlaylist(db, userId(req), id);
   });
   app.delete('/api/playlists/:id', async (req) => {
-    q.deletePlaylist(db, mustInt((req.params as { id: string }).id));
+    q.deletePlaylist(db, userId(req), mustInt((req.params as { id: string }).id));
     return { ok: true };
   });
   app.post('/api/playlists/:id/tracks', async (req) => {
@@ -458,34 +448,34 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     const body = (req.body ?? {}) as { trackIds?: unknown };
     const trackIds = intList(body.trackIds, 'Liste de titres');
     if (trackIds.length > 20000) throw new HttpError(400, 'Trop de titres à la fois');
-    return { added: q.addToPlaylist(db, id, trackIds) };
+    return { added: q.addToPlaylist(db, userId(req), id, trackIds) };
   });
   app.put('/api/playlists/:id/order', async (req) => {
     const id = mustInt((req.params as { id: string }).id);
     const body = (req.body ?? {}) as { entryIds?: unknown };
-    q.reorderPlaylist(db, id, intList(body.entryIds, "Liste d'entrées"));
+    q.reorderPlaylist(db, userId(req), id, intList(body.entryIds, "Liste d'entrées"));
     return { ok: true };
   });
   app.delete('/api/playlists/:id/entries/:entryId', async (req) => {
     const p = req.params as { id: string; entryId: string };
-    q.removeFromPlaylist(db, mustInt(p.id), mustInt(p.entryId));
+    q.removeFromPlaylist(db, userId(req), mustInt(p.id), mustInt(p.entryId));
     return { ok: true };
   });
 
   // ---- Favoris et historique
-  app.get('/api/favorites', async () => q.listFavorites(db));
-  app.get('/api/favorites/ids', async () => q.favoriteIds(db));
+  app.get('/api/favorites', async (req) => q.listFavorites(db, userId(req)));
+  app.get('/api/favorites/ids', async (req) => q.favoriteIds(db, userId(req)));
   app.put('/api/favorites/:trackId', async (req) => {
-    q.setFavorite(db, mustInt((req.params as { trackId: string }).trackId), true);
+    q.setFavorite(db, userId(req), mustInt((req.params as { trackId: string }).trackId), true);
     return { ok: true };
   });
   app.delete('/api/favorites/:trackId', async (req) => {
-    q.setFavorite(db, mustInt((req.params as { trackId: string }).trackId), false);
+    q.setFavorite(db, userId(req), mustInt((req.params as { trackId: string }).trackId), false);
     return { ok: true };
   });
   app.post('/api/plays', async (req) => {
     const body = (req.body ?? {}) as { trackId?: unknown };
-    q.recordPlay(db, mustInt(body.trackId, 'Titre'));
+    q.recordPlay(db, userId(req), mustInt(body.trackId, 'Titre'));
     return { ok: true };
   });
 

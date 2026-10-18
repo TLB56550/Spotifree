@@ -26,7 +26,7 @@ function patch(id: number, change: Partial<UploadItem>): void {
   useUploads.setState((s) => ({ items: s.items.map((it) => (it.id === id ? { ...it, ...change } : it)) }));
 }
 
-/** Envoie un fichier vers le PC ; la progression vient de XMLHttpRequest (fetch ne la fournit pas). */
+/** Envoie un fichier vers le serveur ; la progression vient de XMLHttpRequest (fetch ne la fournit pas). */
 function send(item: UploadItem, file: File): Promise<void> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
@@ -49,12 +49,12 @@ function send(item: UploadItem, file: File): Promise<void> {
         // Réponse sans détail.
       }
       if (xhr.status >= 200 && xhr.status < 300) patch(item.id, { status: body.duplicate ? 'duplicate' : 'done', loaded: item.size });
-      else patch(item.id, { status: 'error', error: body.error ?? 'Le PC a refusé ce fichier.' });
+      else patch(item.id, { status: 'error', error: body.error ?? 'Le serveur a refusé ce fichier.' });
       resolve();
     };
     xhr.onerror = () => {
       useConnection.getState().setOffline(true);
-      patch(item.id, { status: 'error', error: 'Impossible de joindre le PC.' });
+      patch(item.id, { status: 'error', error: 'Impossible de joindre le serveur.' });
       resolve();
     };
     xhr.ontimeout = xhr.onerror;

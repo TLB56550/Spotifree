@@ -18,7 +18,7 @@ export function Appearance() {
   return (
     <section className="setting-block appearance" aria-labelledby="appearance-title">
       <h2 id="appearance-title">Apparence</h2>
-      <p className="muted">Le choix est gardé sur cet appareil : ton téléphone et ton PC peuvent avoir chacun le leur.</p>
+      <p className="muted">Le choix est gardé sur cet appareil : ton téléphone et ton ordinateur peuvent avoir chacun le leur.</p>
 
       <div className="mode-choice" role="radiogroup" aria-label="Mode">
         {MODES.map(({ id, label, icon: Icon }) => (
